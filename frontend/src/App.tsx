@@ -1,0 +1,1187 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  AppRoute,
+  Candidate,
+  JobListing,
+  Interview,
+  MessageThread,
+  NotificationItem,
+  CompanyProfile,
+  PipelineStage,
+  AuthUser,
+} from './types';
+import {
+  INITIAL_CANDIDATES,
+  INITIAL_JOBS,
+  INITIAL_INTERVIEWS,
+  INITIAL_THREADS,
+  INITIAL_NOTIFICATIONS,
+  INITIAL_COMPANY,
+  STORAGE_KEYS,
+  loadStoredData,
+  saveStoredData,
+} from './mockData';
+import { authService } from './services/authService';
+import { candidateService } from './services/candidateService';
+
+// Components
+import { Toast } from './components/Toast';
+import { CandidateDrawer } from './components/CandidateDrawer';
+import { ScheduleInterviewModal } from './components/ScheduleInterviewModal';
+import { InfoModals } from './components/InfoModals';
+
+// Views
+import { LandingView } from './components/LandingView';
+import { LoginView } from './components/LoginView';
+import { DashboardView } from './components/DashboardView';
+import { PostJobView } from './components/PostJobView';
+import { MyJobsView } from './components/MyJobsView';
+import { JobDetailsView } from './components/JobDetailsView';
+import { CandidatesView } from './components/CandidatesView';
+import { ShortlistedView } from './components/ShortlistedView';
+import { InterviewsView } from './components/InterviewsView';
+import { MessagesView } from './components/MessagesView';
+import { NotificationsView } from './components/NotificationsView';
+import { AnalyticsView } from './components/AnalyticsView';
+import { CompanyProfileView } from './components/CompanyProfileView';
+import { SettingsView } from './components/SettingsView';
+
+// Icons
+import {
+  LayoutDashboard,
+  PlusCircle,
+  Briefcase,
+  Users,
+  Star,
+  Calendar,
+  MessageSquare,
+  Bell,
+  BarChart3,
+  Building,
+  Settings,
+  Search,
+  Menu,
+  X,
+  ExternalLink,
+  LogOut,
+} from 'lucide-react';
+
+// Protected routes that require authentication
+const PROTECTED_ROUTES: AppRoute[] = [
+  'dashboard',
+  'post-job',
+  'edit-job',
+  'job-details',
+  'my-jobs',
+  'candidates',
+  'shortlisted',
+  'interviews',
+  'messages',
+  'notifications',
+  'analytics',
+  'company',
+  'settings',
+];
+
+// Routes that require verified company
+const VERIFIED_ROUTES: AppRoute[] = ['post-job', 'edit-job'];
+
+export default function App() {
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>('landing');
+
+  // ═══════════════════════════════════════════════════════
+  // AUTH STATE
+  // ═══════════════════════════════════════════════════════
+  const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
+    return authService.getCurrentUser();
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // JOB EDIT / VIEW STATE
+  // ═══════════════════════════════════════════════════════
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [viewingJobId, setViewingJobId] = useState<string | null>(null);
+
+  // ═══════════════════════════════════════════════════════
+  // CANDIDATES — REAL API
+  // ═══════════════════════════════════════════════════════
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesError, setCandidatesError] = useState<string | null>(null);
+
+  const fetchCandidates = useCallback(async () => {
+    if (!authUser) {
+      setCandidates([]);
+      return;
+    }
+    try {
+      setCandidatesLoading(true);
+      setCandidatesError(null);
+      const data = await candidateService.listCandidates();
+      setCandidates(data || []);
+      console.log('[APP] Fetched candidates from API:', data?.length || 0);
+    } catch (err: any) {
+      console.error('[APP] Failed to fetch candidates:', err.message);
+      setCandidatesError(
+        err?.response?.data?.message || 'Failed to load candidates'
+      );
+      setCandidates([]);
+    } finally {
+      setCandidatesLoading(false);
+    }
+  }, [authUser]);
+
+  useEffect(() => {
+    if (
+      authUser &&
+      ['dashboard', 'candidates', 'shortlisted', 'interviews'].includes(
+        currentRoute
+      )
+    ) {
+      fetchCandidates();
+    }
+  }, [authUser, currentRoute, fetchCandidates]);
+
+  // Persistent States
+  const [jobs, setJobs] = useState<JobListing[]>(() =>
+    loadStoredData(STORAGE_KEYS.JOBS, INITIAL_JOBS)
+  );
+  const [interviews, setInterviews] = useState<Interview[]>(() =>
+    loadStoredData(STORAGE_KEYS.INTERVIEWS, INITIAL_INTERVIEWS)
+  );
+  const [threads, setThreads] = useState<MessageThread[]>(() =>
+    loadStoredData(STORAGE_KEYS.THREADS, INITIAL_THREADS)
+  );
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() =>
+    loadStoredData(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS)
+  );
+  const [company, setCompany] = useState<CompanyProfile>(() =>
+    loadStoredData(STORAGE_KEYS.COMPANY, INITIAL_COMPANY)
+  );
+
+  useEffect(() => {
+    saveStoredData(STORAGE_KEYS.JOBS, jobs);
+  }, [jobs]);
+  useEffect(() => {
+    saveStoredData(STORAGE_KEYS.INTERVIEWS, interviews);
+  }, [interviews]);
+  useEffect(() => {
+    saveStoredData(STORAGE_KEYS.THREADS, threads);
+  }, [threads]);
+  useEffect(() => {
+    saveStoredData(STORAGE_KEYS.NOTIFICATIONS, notifications);
+  }, [notifications]);
+  useEffect(() => {
+    saveStoredData(STORAGE_KEYS.COMPANY, company);
+  }, [company]);
+
+  // Modal & Drawer State
+  const [activeCandidate, setActiveCandidate] = useState<Candidate | null>(
+    null
+  );
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(
+    null
+  );
+  const [infoModalType, setInfoModalType] = useState<
+    'privacy' | 'terms' | 'contact' | null
+  >(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+  }, []);
+
+  // ═══════════════════════════════════════════════════════
+  // AUTH HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handleLoginSuccess = useCallback(
+    (user: AuthUser) => {
+      setAuthUser(user);
+      setCurrentRoute('dashboard');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    []
+  );
+
+  const handleLogout = useCallback(async () => {
+    await authService.logout();
+    setAuthUser(null);
+    setCandidates([]);
+    setCurrentRoute('landing');
+    showToast('You have been signed out successfully');
+    setMobileMenuOpen(false);
+  }, [showToast]);
+
+  const handleUpdateAuthUser = useCallback(
+    (updates: Partial<AuthUser>) => {
+      setAuthUser((prev) => {
+        if (!prev) return null;
+        const updated = { ...prev, ...updates };
+        authService.updateCachedUser(updates);
+        return updated;
+      });
+    },
+    []
+  );
+
+  // ═══════════════════════════════════════════════════════
+  // NAVIGATION — FIXED: Post Job now opens correctly
+  // ═══════════════════════════════════════════════════════
+  const handleNavigate = useCallback(
+    (route: AppRoute) => {
+      // Step 1: Check authentication for protected routes
+      if (PROTECTED_ROUTES.includes(route) && !authUser) {
+        showToast('Please sign in to access the recruiter portal');
+        setCurrentRoute('login');
+        setMobileMenuOpen(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      // Step 2: For post-job and edit-job, let the PostJobView component
+      // handle the verification gate internally with its own UI.
+      // We no longer block navigation here — the component shows
+      // a proper "verification required" screen with action buttons.
+      //
+      // REMOVED the old block:
+      // if (route === 'post-job' && authUser && !authUser.isVerified) { ... }
+
+      // Step 3: Clear edit/view state when navigating away
+      if (route !== 'edit-job') setEditingJobId(null);
+      if (route !== 'job-details') setViewingJobId(null);
+
+      // Step 4: Navigate
+      setCurrentRoute(route);
+      setMobileMenuOpen(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [authUser, showToast]
+  );
+
+  const handleEditJob = useCallback(
+    (jobId: string) => {
+      if (!authUser) {
+        showToast('Please sign in first');
+        setCurrentRoute('login');
+        return;
+      }
+      // Let PostJobView handle the verification gate internally
+      setEditingJobId(jobId);
+      setViewingJobId(null);
+      setCurrentRoute('edit-job');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [authUser, showToast]
+  );
+
+  const handleViewJob = useCallback((jobId: string) => {
+    setViewingJobId(jobId);
+    setEditingJobId(null);
+    setCurrentRoute('job-details');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // ═══════════════════════════════════════════════════════
+  // CANDIDATE HANDLERS — Real API
+  // ═══════════════════════════════════════════════════════
+  const handleMoveCandidateStage = useCallback(
+    async (candidateId: string, newStage: PipelineStage) => {
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === candidateId ? { ...c, stage: newStage } : c
+        )
+      );
+      const candidate = candidates.find((c) => c.id === candidateId);
+      showToast(
+        candidate
+          ? `${candidate.name} shifted to ${newStage}`
+          : `Candidate moved to ${newStage}`
+      );
+
+      try {
+        await candidateService.updateStage(candidateId, newStage);
+      } catch (err: any) {
+        console.error('[APP] Failed to update stage:', err.message);
+        showToast('Failed to update stage — refreshing data');
+        fetchCandidates();
+      }
+    },
+    [candidates, showToast, fetchCandidates]
+  );
+
+  const handleBookmarkToggle = useCallback(
+    async (candidateId: string) => {
+      setCandidates((prev) =>
+        prev.map((c) => {
+          if (c.id === candidateId) {
+            const nextState = !c.bookmarked;
+            showToast(
+              nextState
+                ? `${c.name} added to shortlisted pool`
+                : `${c.name} removed from shortlisted`
+            );
+            return { ...c, bookmarked: nextState };
+          }
+          return c;
+        })
+      );
+
+      try {
+        await candidateService.toggleBookmark(candidateId);
+      } catch (err: any) {
+        console.error('[APP] Failed to toggle bookmark:', err.message);
+        showToast('Failed to update bookmark — refreshing data');
+        fetchCandidates();
+      }
+    },
+    [showToast, fetchCandidates]
+  );
+
+  const handleAddCandidateNote = useCallback(
+    async (candidateId: string, noteText: string) => {
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === candidateId
+            ? { ...c, notes: [...c.notes, noteText] }
+            : c
+        )
+      );
+      showToast('Internal evaluation note appended');
+
+      try {
+        await candidateService.addNote(candidateId, noteText);
+      } catch (err: any) {
+        console.error('[APP] Failed to add note:', err.message);
+        showToast('Failed to save note — refreshing data');
+        fetchCandidates();
+      }
+    },
+    [showToast, fetchCandidates]
+  );
+
+  // ═══════════════════════════════════════════════════════
+  // JOB HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handlePublishJob = useCallback(
+    (
+      jobData: Omit<
+        JobListing,
+        'id' | 'postedDate' | 'applicantsCount' | 'shortlistedCount'
+      >
+    ) => {
+      const newJob: JobListing = {
+        ...jobData,
+        id: `job-${Date.now()}`,
+        postedDate: 'Just now',
+        applicantsCount: 0,
+        shortlistedCount: 0,
+        status: 'active',
+      };
+      setJobs((prev) => [newJob, ...prev]);
+      showToast(`Job listing "${newJob.title}" published!`);
+      setCurrentRoute('my-jobs');
+    },
+    [showToast]
+  );
+
+  const handleSaveJobDraft = useCallback(
+    (
+      jobData: Omit<
+        JobListing,
+        'id' | 'postedDate' | 'applicantsCount' | 'shortlistedCount'
+      >
+    ) => {
+      const draftJob: JobListing = {
+        ...jobData,
+        id: `job-${Date.now()}`,
+        postedDate: 'Draft',
+        applicantsCount: 0,
+        shortlistedCount: 0,
+        status: 'draft',
+      };
+      setJobs((prev) => [draftJob, ...prev]);
+      showToast('Job listing draft saved');
+      setCurrentRoute('my-jobs');
+    },
+    [showToast]
+  );
+
+  const handleUpdateJobStatus = useCallback(
+    (jobId: string, newStatus: JobListing['status']) => {
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId ? { ...j, status: newStatus } : j
+        )
+      );
+      showToast(`Job status updated to ${newStatus}`);
+    },
+    [showToast]
+  );
+
+  const handleDeleteJob = useCallback(
+    (jobId: string) => {
+      setJobs((prev) => prev.filter((j) => j.id !== jobId));
+      showToast('Job listing removed');
+    },
+    [showToast]
+  );
+
+  const handleViewApplicants = useCallback(
+    (jobId: string, jobTitle: string) => {
+      showToast(`Viewing applicants for ${jobTitle}`);
+      setCurrentRoute('candidates');
+    },
+    [showToast]
+  );
+
+  // ═══════════════════════════════════════════════════════
+  // INTERVIEW HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handleOpenScheduleModal = useCallback(
+    (candidate?: Candidate) => {
+      setScheduleCandidate(candidate || candidates[0] || null);
+      setIsScheduleModalOpen(true);
+    },
+    [candidates]
+  );
+
+  const handleConfirmInterview = useCallback(
+    (newInt: Omit<Interview, 'id'>) => {
+      const created: Interview = {
+        ...newInt,
+        id: `int-${Date.now()}`,
+      };
+      setInterviews((prev) => [created, ...prev]);
+      handleMoveCandidateStage(created.candidateId, 'Interview');
+      showToast(`Interview scheduled with ${created.candidateName}`);
+    },
+    [handleMoveCandidateStage, showToast]
+  );
+
+  const handleUpdateInterviewStatus = useCallback(
+    (interviewId: string, status: Interview['status']) => {
+      setInterviews((prev) =>
+        prev.map((i) =>
+          i.id === interviewId ? { ...i, status } : i
+        )
+      );
+      showToast(`Interview status set to ${status}`);
+    },
+    [showToast]
+  );
+
+  // ═══════════════════════════════════════════════════════
+  // MESSAGING HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handleOpenMessage = useCallback(
+    (candidate: Candidate) => {
+      setActiveCandidate(null);
+      const existing = threads.find(
+        (t) => t.candidateId === candidate.id
+      );
+      if (!existing) {
+        const newThread: MessageThread = {
+          id: `thread-${Date.now()}`,
+          candidateId: candidate.id,
+          candidateName: candidate.name,
+          candidateRole: candidate.role,
+          candidateAvatarBg: candidate.avatarBg,
+          lastMessage: 'Conversation opened',
+          lastMessageTime: 'Just now',
+          unread: false,
+          messages: [
+            {
+              id: `msg-${Date.now()}`,
+              sender: 'recruiter',
+              text: `Hello ${candidate.name}, we reviewed your verified credentials for ${candidate.role} and would love to connect.`,
+              time: 'Just now',
+            },
+          ],
+        };
+        setThreads((prev) => [newThread, ...prev]);
+      }
+      setCurrentRoute('messages');
+    },
+    [threads]
+  );
+
+  const handleSendMessage = useCallback(
+    (threadId: string, text: string) => {
+      setThreads((prev) =>
+        prev.map((th) => {
+          if (th.id === threadId) {
+            const newMsg = {
+              id: `m-${Date.now()}`,
+              sender: 'recruiter' as const,
+              text,
+              time: 'Just now',
+            };
+            return {
+              ...th,
+              lastMessage: text,
+              lastMessageTime: 'Just now',
+              messages: [...th.messages, newMsg],
+            };
+          }
+          return th;
+        })
+      );
+      showToast('Message dispatched');
+    },
+    [showToast]
+  );
+
+  // ═══════════════════════════════════════════════════════
+  // NOTIFICATION HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handleMarkAllNotificationsRead = useCallback(() => {
+    setNotifications((prev) =>
+      prev.map((n) => ({ ...n, read: true }))
+    );
+    showToast('All notifications marked as read');
+  }, [showToast]);
+
+  // ═══════════════════════════════════════════════════════
+  // SETTINGS HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handleResetData = useCallback(() => {
+    setJobs(INITIAL_JOBS);
+    setInterviews(INITIAL_INTERVIEWS);
+    setThreads(INITIAL_THREADS);
+    setNotifications(INITIAL_NOTIFICATIONS);
+    setCompany(INITIAL_COMPANY);
+    fetchCandidates();
+    showToast('Demonstration data restored to initial state');
+  }, [fetchCandidates, showToast]);
+
+  // ═══════════════════════════════════════════════════════
+  // COMPUTED VALUES
+  // ═══════════════════════════════════════════════════════
+  const unreadMessagesCount = useMemo(
+    () => threads.filter((t) => t.unread).length,
+    [threads]
+  );
+
+  const unreadNotifCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  );
+
+  const getUserInitials = useCallback((name: string) => {
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }, []);
+
+  const navItems = useMemo(
+    () => [
+      {
+        id: 'dashboard' as AppRoute,
+        label: 'Dashboard',
+        icon: LayoutDashboard,
+      },
+      { id: 'post-job' as AppRoute, label: 'Post Job', icon: PlusCircle },
+      { id: 'my-jobs' as AppRoute, label: 'My Jobs', icon: Briefcase },
+      { id: 'candidates' as AppRoute, label: 'Candidates', icon: Users },
+      { id: 'shortlisted' as AppRoute, label: 'Shortlisted', icon: Star },
+      {
+        id: 'interviews' as AppRoute,
+        label: 'Interviews',
+        icon: Calendar,
+      },
+      {
+        id: 'messages' as AppRoute,
+        label: 'Messages',
+        icon: MessageSquare,
+        badge:
+          unreadMessagesCount > 0 ? unreadMessagesCount : undefined,
+      },
+      {
+        id: 'notifications' as AppRoute,
+        label: 'Notifications',
+        icon: Bell,
+        badge: unreadNotifCount > 0 ? unreadNotifCount : undefined,
+      },
+      {
+        id: 'analytics' as AppRoute,
+        label: 'Analytics',
+        icon: BarChart3,
+      },
+    ],
+    [unreadMessagesCount, unreadNotifCount]
+  );
+
+  const secondaryNavItems = useMemo(
+    () => [
+      {
+        id: 'company' as AppRoute,
+        label: 'Company Profile',
+        icon: Building,
+      },
+      { id: 'settings' as AppRoute, label: 'Settings', icon: Settings },
+    ],
+    []
+  );
+
+  // ═══════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════
+  return (
+    <div className="min-h-screen bg-[#FCFCF7] text-[#29233A] flex flex-col font-sans">
+      <Toast
+        message={toastMessage}
+        onClose={() => setToastMessage(null)}
+      />
+
+      <CandidateDrawer
+        candidate={activeCandidate}
+        onClose={() => setActiveCandidate(null)}
+        onStageChange={(id, stage) => {
+          handleMoveCandidateStage(id, stage);
+          setActiveCandidate((prev) =>
+            prev ? { ...prev, stage } : null
+          );
+        }}
+        onBookmarkToggle={(id) => {
+          handleBookmarkToggle(id);
+          setActiveCandidate((prev) =>
+            prev ? { ...prev, bookmarked: !prev.bookmarked } : null
+          );
+        }}
+        onScheduleInterview={(cand) => {
+          setActiveCandidate(null);
+          handleOpenScheduleModal(cand);
+        }}
+        onOpenMessage={(cand) => handleOpenMessage(cand)}
+        onAddNote={(id, note) => {
+          handleAddCandidateNote(id, note);
+          setActiveCandidate((prev) =>
+            prev ? { ...prev, notes: [...prev.notes, note] } : null
+          );
+        }}
+      />
+
+      <ScheduleInterviewModal
+        isOpen={isScheduleModalOpen}
+        candidate={scheduleCandidate}
+        onClose={() => setIsScheduleModalOpen(false)}
+        onConfirm={handleConfirmInterview}
+      />
+
+      <InfoModals
+        type={infoModalType}
+        onClose={() => setInfoModalType(null)}
+        onSubmitContact={() =>
+          showToast('Inquiry dispatched to Verihire talent team')
+        }
+      />
+
+      {currentRoute === 'landing' ? (
+        <LandingView
+          onNavigate={handleNavigate}
+          featuredCandidates={candidates}
+          onSelectCandidate={(cand) => setActiveCandidate(cand)}
+          onOpenInfo={(t) => setInfoModalType(t)}
+        />
+      ) : currentRoute === 'login' ? (
+        <LoginView
+          onLoginSuccess={handleLoginSuccess}
+          onNavigate={handleNavigate}
+          onShowToast={showToast}
+        />
+      ) : (
+        <div className="flex h-screen overflow-hidden">
+          {/* ═══ Sidebar (Desktop) ═══ */}
+          <aside className="hidden lg:flex w-64 bg-[#2C1B57] text-white flex-col h-full shrink-0 border-r border-white/10 select-none">
+            <div className="p-5 flex items-center justify-between border-b border-white/10">
+              <div
+                onClick={() => handleNavigate('dashboard')}
+                className="flex items-center gap-2.5 cursor-pointer group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#2C1B57] to-[#B29CFE] relative flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-0 rounded-b-xs" />
+                  <div className="absolute top-2 w-3.5 h-0.5 bg-white rounded-full" />
+                </div>
+                <span className="font-extrabold text-base tracking-tight">
+                  Verihire
+                </span>
+              </div>
+              <button
+                onClick={() => handleNavigate('landing')}
+                className="text-[10px] font-bold text-white/50 hover:text-white flex items-center gap-1 transition-colors"
+                title="View Public Site"
+              >
+                <span>Site</span>
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                Workspace
+              </div>
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive =
+                  currentRoute === item.id ||
+                  (item.id === 'my-jobs' &&
+                    (currentRoute === 'edit-job' ||
+                      currentRoute === 'job-details')) ||
+                  (item.id === 'post-job' &&
+                    currentRoute === 'edit-job');
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleNavigate(item.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                      isActive
+                        ? 'bg-white/15 text-white shadow-xs'
+                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.badge !== undefined && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-[#42326E] text-[10px] font-extrabold text-[#E0D4FC]">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              <div className="pt-4 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                Management
+              </div>
+              {secondaryNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentRoute === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleNavigate(item.id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                      isActive
+                        ? 'bg-white/15 text-white shadow-xs'
+                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10 transition-all mt-2"
+              >
+                <LogOut className="w-4 h-4 shrink-0" />
+                <span>Sign Out</span>
+              </button>
+            </div>
+
+            <div className="p-3 border-t border-white/10">
+              <div
+                onClick={() => handleNavigate('company')}
+                className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors"
+              >
+                {authUser?.avatar?.url ? (
+                  <img
+                    src={authUser.avatar.url}
+                    alt={authUser.name}
+                    className="w-9 h-9 rounded-xl object-cover shadow-xs"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#42326E] to-[#B29CFE] flex items-center justify-center text-white font-bold text-xs shadow-xs">
+                    {authUser
+                      ? getUserInitials(authUser.name)
+                      : 'BD'}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold truncate text-white">
+                    {authUser?.name || 'Guest User'}
+                  </div>
+                  <div className="text-[10px] text-white/50 truncate">
+                    {authUser?.companyName ||
+                      'Lead Recruiter • Verihire'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          {/* ═══ Main Area ═══ */}
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            {/* Top Header */}
+            <header className="h-16 bg-[#FCFCF7]/90 backdrop-blur-md border-b border-[#E8E3EF] px-6 flex items-center justify-between shrink-0 z-20">
+              <div className="flex items-center gap-3 lg:hidden">
+                <button
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="p-2 text-[#2C1B57] hover:bg-gray-100 rounded-lg"
+                  aria-label="Open menu"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
+                <div
+                  onClick={() => handleNavigate('dashboard')}
+                  className="flex items-center gap-2 font-bold text-[#2C1B57] cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-md bg-[#2C1B57] flex items-center justify-center text-white text-xs font-bold">
+                    VH
+                  </div>
+                  <span>Verihire</span>
+                </div>
+              </div>
+
+              <div className="hidden sm:flex items-center gap-2 bg-white border border-[#E8E3EF] rounded-xl px-3 py-1.5 w-72 lg:w-96 shadow-2xs">
+                <Search className="w-4 h-4 text-[#6F687A]" />
+                <input
+                  type="text"
+                  value={globalSearch}
+                  onChange={(e) => setGlobalSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === 'Enter' &&
+                      globalSearch.trim()
+                    ) {
+                      handleNavigate('candidates');
+                    }
+                  }}
+                  placeholder="Global search (candidates, jobs, skills)..."
+                  className="w-full text-xs text-[#29233A] focus:outline-hidden placeholder:text-[#6F687A]"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleNavigate('messages')}
+                  className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-white rounded-xl relative transition-colors"
+                  title="Messages"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  {unreadMessagesCount > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-[#42326E] absolute top-1.5 right-1.5" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => handleNavigate('notifications')}
+                  className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-white rounded-xl relative transition-colors"
+                  title="Notifications"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadNotifCount > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-1.5 right-1.5" />
+                  )}
+                </button>
+
+                <div className="h-6 w-px bg-[#E8E3EF] mx-1" />
+
+                <button
+                  onClick={() => handleNavigate('landing')}
+                  className="px-3 py-1.5 text-xs font-bold text-[#49454F] hover:text-[#2C1B57] hover:bg-white rounded-xl transition-colors hidden sm:flex items-center gap-1.5"
+                >
+                  <span>Public View</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors hidden sm:flex items-center gap-1.5"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            </header>
+
+            {/* ═══ Mobile Drawer ═══ */}
+            {mobileMenuOpen && (
+              <div className="fixed inset-0 z-50 lg:hidden flex">
+                <div
+                  className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+                  onClick={() => setMobileMenuOpen(false)}
+                />
+                <div className="relative w-64 bg-[#2C1B57] text-white flex flex-col h-full shadow-2xl z-10 animate-in slide-in-from-left duration-200">
+                  <div className="p-4 flex items-center justify-between border-b border-white/10">
+                    <span className="font-extrabold text-base">
+                      Verihire
+                    </span>
+                    <button
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="p-1 rounded-lg text-white/70 hover:text-white"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                    {navItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = currentRoute === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => handleNavigate(item.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold ${
+                            isActive
+                              ? 'bg-white/15 text-white'
+                              : 'text-white/60 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Icon className="w-4 h-4" />
+                            <span>{item.label}</span>
+                          </div>
+                          {item.badge !== undefined && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-[#42326E] text-[10px] font-extrabold text-[#E0D4FC]">
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+
+                    <div className="pt-4 border-t border-white/10 mt-2 space-y-1">
+                      {secondaryNavItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = currentRoute === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() =>
+                              handleNavigate(item.id)
+                            }
+                            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold ${
+                              isActive
+                                ? 'bg-white/15 text-white'
+                                : 'text-white/60 hover:text-white'
+                            }`}
+                          >
+                            <Icon className="w-4 h-4" />
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+
+                      <button
+                        onClick={() =>
+                          handleNavigate('landing')
+                        }
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-white/60 hover:text-white"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Back to Landing Page</span>
+                      </button>
+
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Page Content Router ═══ */}
+            <main className="flex-1 overflow-y-auto bg-[#FCFCF7]">
+              {currentRoute === 'dashboard' && (
+                <DashboardView
+                  candidates={candidates}
+                  onNavigate={handleNavigate}
+                  onSelectCandidate={(cand) =>
+                    setActiveCandidate(cand)
+                  }
+                  onMoveCandidateStage={
+                    handleMoveCandidateStage
+                  }
+                  onScheduleInterview={
+                    handleOpenScheduleModal
+                  }
+                />
+              )}
+
+              {(currentRoute === 'post-job' ||
+                (currentRoute === 'edit-job' &&
+                  editingJobId)) && (
+                <PostJobView
+                  onPublishJob={handlePublishJob}
+                  onSaveDraft={handleSaveJobDraft}
+                  onNavigate={handleNavigate}
+                  authUser={authUser}
+                  onShowToast={showToast}
+                  editJobId={
+                    currentRoute === 'edit-job'
+                      ? editingJobId
+                      : null
+                  }
+                />
+              )}
+
+              {currentRoute === 'job-details' &&
+                viewingJobId && (
+                  <JobDetailsView
+                    jobId={viewingJobId}
+                    onNavigate={handleNavigate}
+                    onEditJob={handleEditJob}
+                    onShowToast={showToast}
+                  />
+                )}
+
+              {currentRoute === 'my-jobs' && (
+                <MyJobsView
+                  onNavigate={handleNavigate}
+                  onEditJob={handleEditJob}
+                  onViewJob={handleViewJob}
+                  onViewApplicants={handleViewApplicants}
+                  onShowToast={showToast}
+                />
+              )}
+
+              {currentRoute === 'candidates' && (
+                <>
+                  {candidatesLoading && (
+                    <div className="p-8 text-center text-sm text-[#6F687A]">
+                      Loading verified candidates from your
+                      job applications...
+                    </div>
+                  )}
+                  {candidatesError && !candidatesLoading && (
+                    <div className="p-6 mx-6 mt-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                      <strong>Error:</strong>{' '}
+                      {candidatesError}
+                      <button
+                        onClick={fetchCandidates}
+                        className="ml-3 underline font-bold hover:text-red-800"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {!candidatesLoading &&
+                    !candidatesError && (
+                      <CandidatesView
+                        candidates={candidates}
+                        onSelectCandidate={(cand) =>
+                          setActiveCandidate(cand)
+                        }
+                        onBookmarkToggle={
+                          handleBookmarkToggle
+                        }
+                        onShortlistCandidate={(cand) => {
+                          handleMoveCandidateStage(
+                            cand.id,
+                            'Shortlisted'
+                          );
+                          setCandidates((prev) =>
+                            prev.map((c) =>
+                              c.id === cand.id
+                                ? {
+                                    ...c,
+                                    bookmarked: true,
+                                  }
+                                : c
+                            )
+                          );
+                        }}
+                        onOpenMessage={handleOpenMessage}
+                      />
+                    )}
+                </>
+              )}
+
+              {currentRoute === 'shortlisted' && (
+                <ShortlistedView
+                  candidates={candidates}
+                  onSelectCandidate={(cand) =>
+                    setActiveCandidate(cand)
+                  }
+                  onScheduleInterview={
+                    handleOpenScheduleModal
+                  }
+                  onOpenMessage={handleOpenMessage}
+                  onNavigate={handleNavigate}
+                />
+              )}
+
+              {currentRoute === 'interviews' && (
+                <InterviewsView
+                  interviews={interviews}
+                  candidates={candidates}
+                  onOpenScheduleModal={
+                    handleOpenScheduleModal
+                  }
+                  onUpdateStatus={
+                    handleUpdateInterviewStatus
+                  }
+                  onNavigate={handleNavigate}
+                  onShowToast={showToast}
+                />
+              )}
+
+              {currentRoute === 'messages' && (
+                <MessagesView
+                  threads={threads}
+                  activeCandidateId={activeCandidate?.id}
+                  onSendMessage={handleSendMessage}
+                  onSelectCandidateDrawer={(name) => {
+                    const found = candidates.find(
+                      (c) => c.name === name
+                    );
+                    if (found) setActiveCandidate(found);
+                  }}
+                />
+              )}
+
+              {currentRoute === 'notifications' && (
+                <NotificationsView
+                  notifications={notifications}
+                  onMarkAllAsRead={
+                    handleMarkAllNotificationsRead
+                  }
+                  onNavigate={handleNavigate}
+                />
+              )}
+
+              {currentRoute === 'analytics' && (
+                <AnalyticsView />
+              )}
+
+              {currentRoute === 'company' && (
+                <CompanyProfileView
+                  company={company}
+                  onUpdateCompany={(c) => setCompany(c)}
+                  onShowToast={showToast}
+                  authUser={authUser}
+                  onUpdateAuthUser={handleUpdateAuthUser}
+                />
+              )}
+
+              {currentRoute === 'settings' && (
+                <SettingsView
+                  onResetData={handleResetData}
+                  onShowToast={showToast}
+                />
+              )}
+            </main>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

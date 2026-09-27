@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --ink: #2C1B57;
+    --ink-2: #42326E;
+    --ink-3: #4D3D79;
+    --paper: #FCFCF7;
+    --surface: #FFFFFF;
+    --line: #E8E3EF;
+    --line-soft: #EFEAF6;
+    --primary: #42326E;
+    --primary-600: #322554;
+    --primary-50: #EDE6FA;
+    --accent: #B29CFE;
+    --accent-tint: #E0D4FC;
+    --accent-tint-2: #D7C8ED;
+    --secondary: #6E5B9A;
+    --gold: #C58A3A;
+    --gold-50: rgba(197, 138, 58, 0.12);
+    --success: #5F8A72;
+    --success-50: rgba(95, 138, 114, 0.12);
+    --danger: #B85C68;
+    --danger-50: rgba(184, 92, 104, 0.12);
+    --info: #5576B8;
+    --info-50: rgba(85, 118, 184, 0.12);
+    --text: #29233A;
+    --text-soft: #49454F;
+    --text-mute: #6F687A;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    background-color: var(--paper);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+}
+
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(0.5deg);
+  }
+}
+
+@keyframes floatSlowReverse {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(8px) rotate(-0.5deg);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes borderGlow {
+  0%, 100% {
+    border-color: rgba(178, 156, 254, 0.2);
+  }
+  50% {
+    border-color: rgba(178, 156, 254, 0.6);
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-float-delayed {
+  animation: floatSlowReverse 7s cubic-bezier(0.4, 0, 0.2, 1) infinite 1.5s;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 8s ease-in-out infinite;
+}
+
+.animate-border-glow {
+  animation: borderGlow 4s ease-in-out infinite;
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #EFEAF6 25%, #F7F4FA 37%, #EFEAF6 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+/* Apple-style glassmorphism */
+.apple-glass {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+}
+
+.apple-glass-dark {
+  background: rgba(44, 27, 87, 0.88);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.apple-card-hover {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.apple-card-hover:hover {
+  transform: translateY(-4px) scale(1.008);
+  box-shadow: 0 24px 48px -12px rgba(44, 27, 87, 0.12);
+}
+
+/* Custom fine scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D7C8ED;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B29CFE;
+}
