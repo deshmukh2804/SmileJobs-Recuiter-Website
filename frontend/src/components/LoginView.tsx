@@ -15,6 +15,7 @@ import {
   Sparkles,
   Check,
   AlertCircle,
+  Inbox,
 } from 'lucide-react';
 
 interface LoginViewProps {
@@ -32,13 +33,14 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('98260 12345');
   const [isPhoneOtpSent, setIsPhoneOtpSent] = useState(false);
-  const [emailAddress, setEmailAddress] = useState('bhavukdeshmukh@gmail.com');
+  const [emailAddress, setEmailAddress] = useState('');
   const [isEmailOtpSent, setIsEmailOtpSent] = useState(false);
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [resendTimer, setResendTimer] = useState(45);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let interval: any = null;
@@ -85,6 +87,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       return;
     }
     setErrorMessage(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
 
     try {
@@ -96,7 +99,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       onShowToast(`Demo OTP sent to ${countryCode} ${phoneNumber} — Use: 482910`);
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
     } catch (err: any) {
-      setErrorMessage('Failed to connect to the backend server.');
+      setErrorMessage(err?.response?.data?.message || 'Failed to send OTP. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -104,22 +107,27 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
   const handleSendEmailOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailAddress || !emailAddress.includes('@')) {
+    if (!emailAddress || !emailAddress.includes('@') || !emailAddress.includes('.')) {
       setErrorMessage('Please enter a valid email address');
       return;
     }
     setErrorMessage(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
 
     try {
-      await authService.sendOtp({ email: emailAddress });
+      const res = await authService.sendOtp({ email: emailAddress });
       setIsEmailOtpSent(true);
       setResendTimer(45);
       setOtpDigits(['', '', '', '', '', '']);
-      onShowToast(`Demo OTP sent to ${emailAddress} — Use: 482910`);
+      // ✅ Real email OTP — different toast message
+      setSuccessMessage(`✓ Verification code sent to ${emailAddress}. Check your inbox (and spam folder).`);
+      onShowToast(`📧 Verification email sent to ${emailAddress}`);
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
     } catch (err: any) {
-      setErrorMessage('Failed to send verification code. Check network.');
+      const errMsg = err?.response?.data?.message || 'Failed to send verification email. Please try again.';
+      setErrorMessage(errMsg);
+      onShowToast(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -129,15 +137,24 @@ export const LoginView: React.FC<LoginViewProps> = ({
     if (resendTimer > 0) return;
     setResendTimer(45);
     setErrorMessage(null);
+    setSuccessMessage(null);
     try {
       const payload =
         authMethod === 'phone'
           ? { phone: `${countryCode}${phoneNumber.replace(/\s+/g, '')}` }
           : { email: emailAddress };
       await authService.sendOtp(payload);
-      onShowToast('New 6-digit verification code sent!');
-    } catch (err) {
-      onShowToast('Demo mode: use 482910');
+
+      if (authMethod === 'email') {
+        setSuccessMessage(`✓ New code sent to ${emailAddress}`);
+        onShowToast('📧 New verification code sent to your email!');
+      } else {
+        onShowToast('New 6-digit demo OTP sent — Use: 482910');
+      }
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || 'Failed to resend OTP';
+      setErrorMessage(errMsg);
+      onShowToast(errMsg);
     }
   };
 
@@ -150,18 +167,18 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
 
     setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
     try {
       const isPhone = authMethod === 'phone';
       const payload = isPhone
         ? {
             phone: `${countryCode}${phoneNumber.replace(/\s+/g, '')}`,
             otp: code,
-            name: 'Verified Recruiter',
           }
         : {
             email: emailAddress,
             otp: code,
-            name: emailAddress.split('@')[0],
           };
 
       const res = await authService.verifyOtp(payload);
@@ -183,10 +200,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
         rejectionReason: backendUser.rejectionReason,
       };
 
-      onShowToast(`Welcome ${backendUser.name}! Login successful.`);
+      onShowToast(`🎉 Welcome ${backendUser.name || 'Recruiter'}! Login successful.`);
       onLoginSuccess(authUser);
     } catch (err: any) {
-      setErrorMessage(err.response?.data?.message || 'Verification failed.');
+      const errMsg = err.response?.data?.message || 'Verification failed. Please try again.';
+      setErrorMessage(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -196,6 +214,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
     onSuccess: async (tokenResponse) => {
       setIsSubmitting(true);
       setErrorMessage(null);
+      setSuccessMessage(null);
       try {
         const res = await authService.googleLogin(tokenResponse.access_token);
         const backendUser = res.data.user;
@@ -216,7 +235,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           rejectionReason: backendUser.rejectionReason,
         };
 
-        onShowToast(`Welcome ${backendUser.name}! Google login successful.`);
+        onShowToast(`🎉 Welcome ${backendUser.name}! Google login successful.`);
         onLoginSuccess(authUser);
       } catch (err: any) {
         setErrorMessage(err.response?.data?.message || 'Google authentication failed.');
@@ -231,9 +250,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
   const handleFillDemo = () => {
     setPhoneNumber('98260 12345');
-    setEmailAddress('bhavukdeshmukh@gmail.com');
     setOtpDigits(['4', '8', '2', '9', '1', '0']);
     setErrorMessage(null);
+    setSuccessMessage(null);
   };
 
   return (
@@ -285,7 +304,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   Welcome to the future of verified recruiting.
                 </h2>
                 <p className="text-sm text-white/70 mt-3 leading-relaxed">
-                  Sign in as a recruiter using your Google account or mobile OTP to access your live pipeline and verified candidate pool.
+                  Sign in as a recruiter using your Google account, email, or mobile OTP to access your live pipeline and verified candidate pool.
                 </p>
               </div>
 
@@ -398,7 +417,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   onClick={() => {
                     setAuthMethod('phone');
                     setIsPhoneOtpSent(false);
+                    setIsEmailOtpSent(false);
                     setErrorMessage(null);
+                    setSuccessMessage(null);
+                    setOtpDigits(['', '', '', '', '', '']);
                   }}
                   className={`py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${
                     authMethod === 'phone'
@@ -414,8 +436,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   type="button"
                   onClick={() => {
                     setAuthMethod('email');
+                    setIsPhoneOtpSent(false);
                     setIsEmailOtpSent(false);
                     setErrorMessage(null);
+                    setSuccessMessage(null);
+                    setOtpDigits(['', '', '', '', '', '']);
                   }}
                   className={`py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${
                     authMethod === 'email'
@@ -433,6 +458,14 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-700 animate-in fade-in duration-150">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{errorMessage}</span>
+                </div>
+              )}
+
+              {/* Success Alert (for email OTP sent confirmation) */}
+              {successMessage && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-700 animate-in fade-in duration-150">
+                  <Inbox className="w-4 h-4 shrink-0" />
+                  <span>{successMessage}</span>
                 </div>
               )}
 
@@ -510,6 +543,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                           onClick={() => {
                             setIsPhoneOtpSent(false);
                             setErrorMessage(null);
+                            setSuccessMessage(null);
                           }}
                           className="text-xs text-[#42326E] font-bold hover:underline"
                         >
@@ -610,10 +644,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
                           placeholder="e.g. name@company.com"
                           className="w-full py-2.5 px-3.5 text-xs sm:text-sm bg-[#FCFCF7] border border-[#E8E3EF] rounded-xl font-medium focus:outline-hidden focus:border-[#42326E]"
                           autoFocus
+                          autoComplete="email"
                         />
+                        {/* ✅ Real email OTP notice (not demo) */}
                         <p className="text-[11px] text-[#6F687A] mt-1.5 flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-emerald-600" />
-                          Demo mode: use OTP <strong className="text-emerald-700">482910</strong>
+                          <Mail className="w-3 h-3 text-blue-600" />
+                          We'll send a <strong className="text-blue-700">6-digit code</strong> to your email
                         </p>
                       </div>
 
@@ -629,7 +665,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                           </>
                         ) : (
                           <>
-                            <span>Send Email Magic Code</span>
+                            <span>Send Verification Email</span>
                             <ArrowRight className="w-4 h-4" />
                           </>
                         )}
@@ -641,12 +677,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
                       className="space-y-4 animate-in fade-in duration-200"
                     >
                       <div className="flex items-center justify-between pb-2 border-b border-[#E8E3EF]">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="text-xs font-bold text-[#2C1B57]">
-                            Enter Email Sign-in Code
+                            Enter Email Verification Code
                           </div>
-                          <div className="text-[11px] text-[#6F687A] truncate max-w-[200px]">
-                            Dispatched to {emailAddress}
+                          <div className="text-[11px] text-[#6F687A] truncate max-w-[220px]">
+                            Sent to {emailAddress}
                           </div>
                         </div>
                         <button
@@ -654,8 +690,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
                           onClick={() => {
                             setIsEmailOtpSent(false);
                             setErrorMessage(null);
+                            setSuccessMessage(null);
                           }}
-                          className="text-xs text-[#42326E] font-bold hover:underline"
+                          className="text-xs text-[#42326E] font-bold hover:underline ml-2 shrink-0"
                         >
                           Change
                         </button>
@@ -679,23 +716,17 @@ export const LoginView: React.FC<LoginViewProps> = ({
                               onChange={(e) => handleOtpChange(i, e.target.value)}
                               onKeyDown={(e) => handleOtpKeyDown(i, e)}
                               className="w-11 h-13 sm:w-13 sm:h-14 text-center text-lg sm:text-xl font-mono font-extrabold text-[#2C1B57] bg-[#FCFCF7] border border-[#E8E3EF] rounded-xl focus:border-[#42326E] focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#EDE6FA] transition-all"
+                              autoFocus={i === 0}
                             />
                           ))}
                         </div>
 
-                        <div className="mt-2.5 flex items-center justify-between text-[11px]">
-                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-mono font-semibold">
-                            Demo OTP: 482910
+                        {/* ✅ Real email OTP - no demo hint */}
+                        <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-[#6F687A]">
+                          <Inbox className="w-3 h-3 text-blue-600" />
+                          <span>
+                            Check your inbox — the code expires in <strong>5 minutes</strong>
                           </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOtpDigits(['4', '8', '2', '9', '1', '0'])
-                            }
-                            className="text-[#42326E] font-bold hover:underline"
-                          >
-                            Auto-fill OTP
-                          </button>
                         </div>
                       </div>
 
@@ -738,21 +769,23 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </div>
               )}
 
-              {/* Quick Demo Fill */}
-              <div className="pt-2 border-t border-[#E8E3EF]">
-                <div className="flex items-center justify-between text-[11px] text-[#6F687A] mb-1.5">
-                  <span className="font-semibold flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-[#B29CFE]" /> Quick Demo Account:
-                  </span>
+              {/* Quick Demo Fill (only for phone) */}
+              {authMethod === 'phone' && (
+                <div className="pt-2 border-t border-[#E8E3EF]">
+                  <div className="flex items-center justify-between text-[11px] text-[#6F687A] mb-1.5">
+                    <span className="font-semibold flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-[#B29CFE]" /> Quick Demo Account:
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFillDemo}
+                    className="w-full py-1.5 px-2 bg-[#FCFCF7] hover:bg-[#EDE6FA] text-[11px] font-bold text-[#2C1B57] rounded-lg border border-[#E8E3EF] transition-colors"
+                  >
+                    ⚡ Auto-Fill Recruiter Demo Phone
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleFillDemo}
-                  className="w-full py-1.5 px-2 bg-[#FCFCF7] hover:bg-[#EDE6FA] text-[11px] font-bold text-[#2C1B57] rounded-lg border border-[#E8E3EF] transition-colors"
-                >
-                  ⚡ Auto-Fill Recruiter Demo (Bhavuk Deshmukh)
-                </button>
-              </div>
+              )}
             </div>
 
             {/* Bottom Footer Note */}

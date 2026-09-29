@@ -13,6 +13,7 @@ const documentSchema = new mongoose.Schema(
         "pan_card",
         "incorporation_certificate",
         "authorization_letter",
+        "address_proof",
         "other",
       ],
       required: true,
@@ -38,25 +39,16 @@ const galleryImageSchema = new mongoose.Schema(
 
 const recruiterSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
+    name: { type: String, trim: true, default: "" },
+    email: { type: String, lowercase: true, trim: true },
     phone: { type: String, trim: true },
     avatar: {
       public_id: { type: String, default: "" },
       url: { type: String, default: "" },
     },
-    companyName: {
-      type: String,
-      default: "Verihire Talent Technologies",
-    },
-    designation: { type: String, default: "Lead Recruiter" },
-    googleId: { type: String, default: null },
+    companyName: { type: String, default: "" },
+    designation: { type: String, default: "" },
+    googleId: { type: String },
     loginMethod: {
       type: String,
       enum: ["google", "phone_otp", "email_otp"],
@@ -66,7 +58,6 @@ const recruiterSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     lastLogin: { type: Date, default: Date.now },
 
-    // 🏢 REUSABLE COMPANY PROFILE (Stored in recruiter_db)
     companyProfile: {
       name: { type: String, default: "" },
       tagline: { type: String, default: "" },
@@ -74,31 +65,25 @@ const recruiterSchema = new mongoose.Schema(
       about: { type: String, default: "" },
       website: { type: String, default: "" },
       linkedInUrl: { type: String, default: "" },
-
       logo: {
         url: { type: String, default: "" },
         publicId: { type: String, default: "" },
       },
       companyInitials: { type: String, default: "" },
       gallery: [galleryImageSchema],
-
       headquarters: { type: String, default: "" },
       address: { type: String, default: "" },
       city: { type: String, default: "" },
       state: { type: String, default: "" },
       country: { type: String, default: "India" },
-
       teamSize: { type: String, default: "" },
       organizationSize: { type: String, default: "" },
       foundedYear: { type: String, default: "" },
       establishedYear: { type: Number, default: null },
-
       perks: [{ type: String }],
-
       registrationNumber: { type: String, default: "" },
       gstNumber: { type: String, default: "" },
       panNumber: { type: String, default: "" },
-
       contactPerson: {
         name: { type: String, default: "" },
         designation: { type: String, default: "" },
@@ -108,7 +93,6 @@ const recruiterSchema = new mongoose.Schema(
       whatsappNumber: { type: String, default: "" },
     },
 
-    // 📄 VERIFICATION DOCUMENTS & STATUS
     verificationDocuments: [documentSchema],
     verificationStatus: {
       type: String,
@@ -121,8 +105,62 @@ const recruiterSchema = new mongoose.Schema(
     rejectionReason: { type: String, default: "" },
     reviewedBy: { type: String, default: "" },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    autoIndex: false,
+    minimize: true, // ✅ CRITICAL: Removes empty objects
+  }
 );
+
+// ✅ Validation guard
+recruiterSchema.pre("validate", function (next) {
+  if (!this.phone && !this.email) {
+    return next(new Error("Recruiter must have either phone or email"));
+  }
+  next();
+});
+
+// ✅ CRITICAL: Strip null/empty identifier fields at document level BEFORE save
+recruiterSchema.pre("save", function (next) {
+  // Strip null/empty email
+  if (!this.email || this.email === "" || this.email === null) {
+    this.email = undefined;
+    this.$__.activePaths.paths.email = undefined;
+    delete this._doc.email;
+  }
+  // Strip null/empty phone
+  if (!this.phone || this.phone === "" || this.phone === null) {
+    this.phone = undefined;
+    this.$__.activePaths.paths.phone = undefined;
+    delete this._doc.phone;
+  }
+  // Strip null/empty googleId
+  if (!this.googleId || this.googleId === "" || this.googleId === null) {
+    this.googleId = undefined;
+    this.$__.activePaths.paths.googleId = undefined;
+    delete this._doc.googleId;
+  }
+  next();
+});
+
+// ✅ Post-insert cleanup: use raw MongoDB update to remove null fields
+recruiterSchema.post("save", async function (doc) {
+  try {
+    const unsetFields = {};
+    if (!doc.email) unsetFields.email = "";
+    if (!doc.phone) unsetFields.phone = "";
+    if (!doc.googleId) unsetFields.googleId = "";
+
+    if (Object.keys(unsetFields).length > 0) {
+      await mongoose.connection.collection("recruiters").updateOne(
+        { _id: doc._id },
+        { $unset: unsetFields }
+      );
+    }
+  } catch (err) {
+    console.warn("Post-save cleanup warning:", err.message);
+  }
+});
 
 recruiterSchema.methods.generateToken = function () {
   return jwt.sign(
@@ -151,6 +189,12 @@ recruiterSchema.methods.isProfileComplete = function () {
     p.contactPhone &&
     p.contactEmail
   );
+};
+
+recruiterSchema.methods.getLockedField = function () {
+  if (this.loginMethod === "phone_otp") return "phone";
+  if (this.loginMethod === "google" || this.loginMethod === "email_otp") return "email";
+  return null;
 };
 
 const Recruiter = mongoose.model("Recruiter", recruiterSchema);

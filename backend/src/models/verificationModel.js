@@ -10,6 +10,7 @@ const documentSchema = new mongoose.Schema(
         "pan_card",
         "incorporation_certificate",
         "authorization_letter",
+        "address_proof",
         "other",
       ],
       required: true,
@@ -24,6 +25,30 @@ const documentSchema = new mongoose.Schema(
   { _id: true }
 );
 
+// ✅ Company snapshot at time of submission (immutable historical record)
+const companySnapshotSchema = new mongoose.Schema(
+  {
+    name: { type: String, default: "" },
+    industry: { type: String, default: "" },
+    website: { type: String, default: "" },
+    city: { type: String, default: "" },
+    state: { type: String, default: "" },
+    country: { type: String, default: "" },
+    registrationNumber: { type: String, default: "" },
+    gstNumber: { type: String, default: "" },
+    panNumber: { type: String, default: "" },
+    logoUrl: { type: String, default: "" },
+    about: { type: String, default: "" },
+    contactEmail: { type: String, default: "" },
+    contactPhone: { type: String, default: "" },
+    contactPersonName: { type: String, default: "" },
+    contactPersonDesignation: { type: String, default: "" },
+    organizationSize: { type: String, default: "" },
+    establishedYear: { type: Number, default: null },
+  },
+  { _id: false }
+);
+
 const verificationSchema = new mongoose.Schema(
   {
     recruiterId: {
@@ -33,26 +58,20 @@ const verificationSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
-    recruiterName: { type: String, required: true },
-    recruiterEmail: { type: String, required: true },
+
+    // ✅ RECRUITER DENORMALIZED DATA (synced on save/status change)
+    recruiterName: { type: String, default: "" },
+    recruiterEmail: { type: String, default: "" },
+    recruiterPhone: { type: String, default: "" },
     companyName: { type: String, default: "" },
 
-    // Company snapshot (at submission time)
-    companySnapshot: {
-      name: { type: String, default: "" },
-      industry: { type: String, default: "" },
-      website: { type: String, default: "" },
-      city: { type: String, default: "" },
-      state: { type: String, default: "" },
-      country: { type: String, default: "" },
-      registrationNumber: { type: String, default: "" },
-      gstNumber: { type: String, default: "" },
-      panNumber: { type: String, default: "" },
-      logoUrl: { type: String, default: "" },
-    },
+    // ✅ COMPANY SNAPSHOT (synced on save/status change)
+    companySnapshot: { type: companySnapshotSchema, default: () => ({}) },
 
+    // ✅ Documents uploaded by recruiter
     documents: [documentSchema],
 
+    // ✅ Verification workflow status
     status: {
       type: String,
       enum: ["not_submitted", "pending", "approved", "rejected"],
@@ -64,6 +83,10 @@ const verificationSchema = new mongoose.Schema(
     reviewedBy: { type: String, default: "" },
     rejectionReason: { type: String, default: "" },
     adminNotes: { type: String, default: "" },
+
+    // ✅ Admin can request clarification docs
+    clarificationDocs: [{ type: String }],
+    clarificationMessage: { type: String, default: "" },
   },
   { timestamps: true }
 );

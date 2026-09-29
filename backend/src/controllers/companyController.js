@@ -38,7 +38,6 @@ class CompanyController {
     }
   }
 
-  // ⭐ NEW: Batch upload multiple gallery images
   async uploadGalleryImagesBatch(req, res, next) {
     try {
       const data = await companyService.uploadGalleryImagesBatch(req.user._id, req.files);
@@ -103,7 +102,6 @@ class CompanyController {
     }
   }
 
-  // 🛠️ ADMIN JSON REVIEW
   async reviewVerification(req, res, next) {
     try {
       const { recruiterId } = req.params;
@@ -120,7 +118,6 @@ class CompanyController {
     }
   }
 
-  // 🛠️ ADMIN: List all verifications with status filter
   async listVerifications(req, res, next) {
     try {
       const { status } = req.query;

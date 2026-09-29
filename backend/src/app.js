@@ -7,7 +7,9 @@ const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const authRoutes = require("./routes/authRoutes");
 const companyRoutes = require("./routes/companyRoutes");
 const jobRoutes = require("./routes/jobRoutes");
-const candidateRoutes = require("./routes/candidateRoutes"); // NEW
+const candidateRoutes = require("./routes/candidateRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const paymentWebhookRoutes = require("./routes/paymentWebhookRoutes");
 
 const app = express();
 
@@ -32,6 +34,11 @@ app.use(
   })
 );
 
+// ═══ CRITICAL: Webhook routes MUST be registered BEFORE express.json() ═══
+// Because Razorpay webhook signature verification requires the RAW body.
+app.use("/api/v1/payments", paymentWebhookRoutes);
+
+// Standard JSON parsers (AFTER webhook route)
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(cookieParser());
@@ -45,10 +52,19 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    environment: process.env.NODE_ENV || "development",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/company", companyRoutes);
 app.use("/api/v1/jobs", jobRoutes);
-app.use("/api/v1/candidates", candidateRoutes); // NEW
+app.use("/api/v1/candidates", candidateRoutes);
+app.use("/api/v1/subscription", subscriptionRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

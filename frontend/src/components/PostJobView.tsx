@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from '
 import { JobListing, AppRoute, AuthUser, CompanyProfile } from '../types';
 import { companyService } from '../services/companyService';
 import { jobService } from '../services/jobService';
+import { SubscriptionView } from './SubscriptionView';
+import { subscriptionService } from '../services/subscriptionService';
 import {
   Check,
   ArrowRight,
@@ -667,7 +669,11 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // ⭐ FIX: Track verification from API response, not just authUser prop
+  // ✅ Subscription quota states
+  const [quotaChecking, setQuotaChecking] = useState(true);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+
+  // ⭐ Track verification from API response, not just authUser prop
   const [verificationStatus, setVerificationStatus] = useState<string>('loading');
   const [isVerifiedFromAPI, setIsVerifiedFromAPI] = useState<boolean | null>(null);
 
@@ -726,7 +732,7 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
   }, [formData.salaryMin, formData.salaryMax, formData.experienceMin, formData.experienceMax]);
 
   // ══════════════════════════════════════════════════
-  // ⭐ FIXED: Load profile and determine verification from API
+  // ⭐ Load profile and determine verification from API
   // ══════════════════════════════════════════════════
   useEffect(() => {
     const load = async () => {
@@ -735,16 +741,8 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
         const data = res.data;
         const cp = data?.companyProfile as CompanyProfile | undefined;
 
-        // ⭐ KEY FIX: Read verification status from API response
         const apiVerificationStatus = data?.verificationStatus || 'not_submitted';
         const apiIsVerified = data?.isVerified === true;
-
-        console.log('[PostJobView] API verification check:', {
-          verificationStatus: apiVerificationStatus,
-          isVerified: apiIsVerified,
-          authUserIsVerified: authUser?.isVerified,
-          authUserVerificationStatus: authUser?.verificationStatus,
-        });
 
         setVerificationStatus(apiVerificationStatus);
         setIsVerifiedFromAPI(apiIsVerified);
@@ -771,7 +769,6 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
         }
         setProfileComplete(!!data?.isProfileComplete);
 
-        // Edit mode
         if (editJobId) {
           const jRes = await jobService.getJob(editJobId);
           const j = jRes.data?.job || jRes.data;
@@ -833,7 +830,6 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
         }
       } catch (err) {
         console.warn('Could not load data', err);
-        // ⭐ FIX: On API error, fallback to authUser prop values
         setVerificationStatus(authUser?.verificationStatus || 'not_submitted');
         setIsVerifiedFromAPI(authUser?.isVerified || false);
       } finally {
@@ -842,6 +838,43 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
     };
     load();
   }, [editJobId, authUser]);
+
+  // ══════════════════════════════════════════════════
+  // ✅ CHECK SUBSCRIPTION QUOTA (runs after profile loads)
+  // ══════════════════════════════════════════════════
+  useEffect(() => {
+    const checkQuota = async () => {
+      if (isEditing) {
+        setQuotaChecking(false);
+        return;
+      }
+      try {
+        const usage = await subscriptionService.getUsage();
+        if (!usage.subscriptionActive || usage.remainingJobs <= 0) {
+          setQuotaExceeded(true);
+        } else {
+          setQuotaExceeded(false);
+        }
+      } catch (err) {
+        console.warn('Could not verify subscription quota', err);
+        setQuotaExceeded(true);
+      } finally {
+        setQuotaChecking(false);
+      }
+    };
+
+    const isApprovedNow =
+      verificationStatus === 'approved' ||
+      isVerifiedFromAPI === true ||
+      authUser?.isVerified === true ||
+      authUser?.verificationStatus === 'approved';
+
+    if (isApprovedNow && !isLoadingProfile) {
+      checkQuota();
+    } else if (!isLoadingProfile) {
+      setQuotaChecking(false);
+    }
+  }, [verificationStatus, isVerifiedFromAPI, authUser, isLoadingProfile, isEditing]);
 
   /* ─── Validation ─── */
   const validateField = useCallback((name: string, value: any): string => {
@@ -996,7 +1029,12 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
       }
       onPublishJob(payload);
     } catch (err: any) {
-      setGlobalError(err.response?.data?.message || err.message || 'Save failed. Please try again.');
+      const msg = err.response?.data?.message || err.message || 'Save failed. Please try again.';
+      setGlobalError(msg);
+      // If backend says quota exceeded, show subscription view
+      if (err.response?.status === 403 && msg.toLowerCase().includes('limit')) {
+        setQuotaExceeded(true);
+      }
     } finally {
       setIsPublishing(false);
     }
@@ -1030,36 +1068,60 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
     </span>
   );
 
-  /* ─── Loading ─── */
-  if (isLoadingProfile) {
+  /* ═══════════════════════════════════════════════════════════════════
+     RENDER GATES — Loading → Quota → Verification → Form
+     ═══════════════════════════════════════════════════════════════════ */
+
+  // GATE 1: Loading state (profile + quota check)
+  if (isLoadingProfile || quotaChecking) {
     return (
       <div className="p-8 flex flex-col items-center justify-center min-h-[400px] gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-[#42326E]" />
         <p className="text-sm text-[#6F687A] font-medium">
-          {isEditing ? 'Loading job data...' : 'Loading your company profile...'}
+          {isEditing
+            ? 'Loading job data...'
+            : quotaChecking
+              ? 'Checking your subscription...'
+              : 'Loading your company profile...'}
         </p>
       </div>
     );
   }
 
-  /* ─── ⭐ FIXED: Verification Gate — Trust API response ─── */
-  // Check multiple sources: API response first, then authUser prop as fallback
+  // GATE 2: Quota exceeded — show subscription upgrade view
+  if (quotaExceeded && !isEditing) {
+    return (
+      <SubscriptionView
+        authUser={authUser}
+        message="You've reached your job posting limit. Upgrade your plan to post more jobs."
+        onSuccess={() => {
+          setQuotaExceeded(false);
+          setQuotaChecking(true);
+          subscriptionService
+            .getUsage()
+            .then((u) => {
+              if (u.subscriptionActive && u.remainingJobs > 0) {
+                setQuotaExceeded(false);
+              } else {
+                setQuotaExceeded(true);
+              }
+            })
+            .catch(() => setQuotaExceeded(true))
+            .finally(() => setQuotaChecking(false));
+        }}
+        onBack={() => onNavigate('dashboard')}
+      />
+    );
+  }
+
+  // GATE 3: Verification check
   const isApproved =
     verificationStatus === 'approved' ||
     isVerifiedFromAPI === true ||
     authUser?.isVerified === true ||
     authUser?.verificationStatus === 'approved';
 
-  console.log('[PostJobView] Final approval check:', {
-    verificationStatus,
-    isVerifiedFromAPI,
-    authUserIsVerified: authUser?.isVerified,
-    authUserVerificationStatus: authUser?.verificationStatus,
-    finalResult: isApproved,
-  });
-
   if (!isApproved) {
-    // Determine which screen to show
     const effectiveStatus = verificationStatus !== 'loading'
       ? verificationStatus
       : (authUser?.verificationStatus || 'not_submitted');
@@ -1131,31 +1193,62 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
   }
 
   /* ═══════════════════════════════════════════════════════════════════
-     MAIN FORM (Verified User) — All 8 sections exactly as before
+     MAIN FORM (Verified User with Active Subscription)
      ═══════════════════════════════════════════════════════════════════ */
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight">
-            {isEditing ? 'Edit Job Listing' : 'Post a New Job'}
-          </h1>
-          <p className="text-sm text-[#6F687A] mt-1">
-            Company & recruiter info auto-filled from your profile. Changes here save to <b>this job only</b>.
-          </p>
-        </div>
-        {errorCount > 0 && (
-          <div className="px-3 py-1.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
-            <span className="text-xs font-bold text-red-600">{errorCount} error{errorCount > 1 ? 's' : ''}</span>
-          </div>
-        )}
-      </div>
+      {/* Header */}
+<div className="flex items-start justify-between flex-wrap gap-4">
+  <div>
+    <div className="flex items-center gap-2 flex-wrap">
+      <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight">
+        {isEditing ? 'Edit Job Listing' : 'Post a New Job'}
+      </h1>
+      {/* ✅ PREMIUM BADGE for Standard/Enterprise users */}
+      {authUser?.subscription?.tier === 'enterprise' && (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 text-[10px] font-bold rounded-full border border-amber-300 shadow-sm">
+          👑 Enterprise
+        </span>
+      )}
+      {authUser?.subscription?.tier === 'standard' && (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-[#EDE6FA] to-[#D7C8ED] text-[#42326E] text-[10px] font-bold rounded-full border border-[#B29CFE] shadow-sm">
+          ⚡ Pro
+        </span>
+      )}
+    </div>
+    <p className="text-sm text-[#6F687A] mt-1">
+      Company & recruiter info auto-filled from your profile. Changes here save to <b>this job only</b>.
+    </p>
+    {/* ✅ Usage indicator for premium users */}
+    {authUser?.usage && authUser.usage.subscriptionActive && (
+      <p className="text-[11px] text-[#6F687A] mt-1 flex items-center gap-1.5">
+        <span className={`font-bold ${authUser.usage.remainingJobs <= 2 ? 'text-red-600' : 'text-emerald-700'}`}>
+          {authUser.usage.remainingJobs} job{authUser.usage.remainingJobs !== 1 ? 's' : ''} remaining
+        </span>
+        <span className="text-[#E8E3EF]">|</span>
+        <span>{authUser.usage.jobsUsed}/{authUser.usage.jobLimit} used</span>
+      </p>
+    )}
+  </div>
+  {errorCount > 0 && (
+    <div className="px-3 py-1.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2">
+      <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+      <span className="text-xs font-bold text-red-600">{errorCount} error{errorCount > 1 ? 's' : ''}</span>
+    </div>
+  )}
+</div>
 
       {/* Company Badge */}
-      {companyProfile && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3">
+    {/* Company Badge — Premium styling for Enterprise/Standard users */}
+{companyProfile && (
+  <div className={`p-4 rounded-2xl flex items-center gap-3 ${
+    authUser?.subscription?.tier === 'enterprise'
+      ? 'bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200'
+      : authUser?.subscription?.tier === 'standard'
+        ? 'bg-gradient-to-r from-[#F8F5FF] to-emerald-50 border border-[#D7C8ED]'
+        : 'bg-emerald-50 border border-emerald-200'
+  }`}>
           {companyProfile.logo?.url ? (
             <img src={companyProfile.logo.url} alt="" className="w-10 h-10 rounded-xl object-cover" />
           ) : (
@@ -1280,17 +1373,14 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                       <p className="text-xs text-[#6F687A]">Title, type, work mode, and qualification</p>
                     </div>
                   </div>
-
                   <div>
                     <label className="block text-xs font-bold text-[#49454F] mb-1.5">Job Title <span className="text-red-400">*</span></label>
-                    <input type="text" name="title" value={formData.title} onChange={handleChange} onBlur={handleBlur}
-                      placeholder="e.g. Senior Product Designer" className={getInputClass('title')} maxLength={120} />
+                    <input type="text" name="title" value={formData.title} onChange={handleChange} onBlur={handleBlur} placeholder="e.g. Senior Product Designer" className={getInputClass('title')} maxLength={120} />
                     <div className="flex justify-between mt-1">
                       <FieldError name="title" />
                       <span className={`text-[10px] font-medium ${formData.title.length < 3 && formData.title.length > 0 ? 'text-red-400' : 'text-[#98A2B3]'}`}>{formData.title.length}/120</span>
                     </div>
                   </div>
-
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-[#49454F] mb-1.5">Department</label>
@@ -1301,7 +1391,6 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                       <input type="text" name="role" value={formData.role} onChange={handleChange} placeholder="e.g. Lead Designer" className={getInputClass('role')} />
                     </div>
                   </div>
-
                   <div>
                     <label className="block text-xs font-bold text-[#49454F] mb-2">Employment Type</label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1313,7 +1402,6 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                       ))}
                     </div>
                   </div>
-
                   <div>
                     <label className="block text-xs font-bold text-[#49454F] mb-2">Work Mode</label>
                     <div className="grid grid-cols-3 gap-2">
@@ -1325,7 +1413,6 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                       ))}
                     </div>
                   </div>
-
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-[#49454F] mb-1.5">Qualification</label>
@@ -1340,51 +1427,21 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                 </div>
               )}
 
-              {/* ══════ SECTION 1-7: Keep ALL remaining sections EXACTLY as your original code ══════ */}
-              {/* I'm keeping them identical — only the verification gate logic above changed */}
-
               {activeSection === 1 && (
                 <div className="space-y-5 animate-in fade-in duration-150">
                   <div className="flex items-center gap-3 pb-4 border-b border-[#E8E3EF]">
                     <div className="w-9 h-9 rounded-xl bg-[#F8F5FF] flex items-center justify-center"><Building2 className="w-4.5 h-4.5 text-[#42326E]" /></div>
-                    <div>
-                      <h3 className="text-lg font-bold text-[#2C1B57] flex items-center">Company Information<AutoFilledBadge /></h3>
-                      <p className="text-xs text-[#6F687A]">Snapshot for this job — edit as needed</p>
-                    </div>
+                    <div><h3 className="text-lg font-bold text-[#2C1B57] flex items-center">Company Information<AutoFilledBadge /></h3><p className="text-xs text-[#6F687A]">Snapshot for this job — edit as needed</p></div>
                   </div>
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
-                    <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>These fields are auto-filled from your company profile. <b>Changes here save to this job listing only</b>.</span>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-[#49454F] mb-1.5">Company Name <span className="text-red-400">*</span></label>
-                    <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} onBlur={handleBlur} placeholder="e.g. HCL Technologies" className={getInputClass('companyName')} />
-                    <FieldError name="companyName" />
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2"><Info className="w-4 h-4 shrink-0 mt-0.5" /><span>These fields are auto-filled from your company profile. <b>Changes here save to this job listing only</b>.</span></div>
+                  <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Company Name <span className="text-red-400">*</span></label><input type="text" name="companyName" value={formData.companyName} onChange={handleChange} onBlur={handleBlur} placeholder="e.g. HCL Technologies" className={getInputClass('companyName')} /><FieldError name="companyName" /></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Website</label><input type="url" name="companyWebsite" value={formData.companyWebsite} onChange={handleChange} onBlur={handleBlur} placeholder="https://..." className={getInputClass('companyWebsite')} /><FieldError name="companyWebsite" /></div>
+                    <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Industry</label><input type="text" name="industry" value={formData.industry} onChange={handleChange} placeholder="e.g. IT, Healthcare" className={getInputClass('industry')} /></div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-[#49454F] mb-1.5">Website</label>
-                      <input type="url" name="companyWebsite" value={formData.companyWebsite} onChange={handleChange} onBlur={handleBlur} placeholder="https://..." className={getInputClass('companyWebsite')} />
-                      <FieldError name="companyWebsite" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-[#49454F] mb-1.5">Industry</label>
-                      <input type="text" name="industry" value={formData.industry} onChange={handleChange} placeholder="e.g. IT, Healthcare" className={getInputClass('industry')} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-[#49454F] mb-1.5">Established Year</label>
-                      <input type="text" name="establishedYear" value={formData.establishedYear} onChange={handleChange} onBlur={handleBlur} placeholder="e.g. 2005" maxLength={4} className={getInputClass('establishedYear')} />
-                      <FieldError name="establishedYear" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-[#49454F] mb-1.5">Organization Size</label>
-                      <select name="organizationSize" value={ORGANIZATION_SIZE_OPTIONS.includes(formData.organizationSize) ? formData.organizationSize : ''} onChange={handleChange} className={getInputClass('organizationSize')}>
-                        <option value="">Select Size</option>
-                        {ORGANIZATION_SIZE_OPTIONS.map(sz => (<option key={sz} value={sz}>{sz}</option>))}
-                      </select>
-                    </div>
+                    <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Established Year</label><input type="text" name="establishedYear" value={formData.establishedYear} onChange={handleChange} onBlur={handleBlur} placeholder="e.g. 2005" maxLength={4} className={getInputClass('establishedYear')} /><FieldError name="establishedYear" /></div>
+                    <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Organization Size</label><select name="organizationSize" value={ORGANIZATION_SIZE_OPTIONS.includes(formData.organizationSize) ? formData.organizationSize : ''} onChange={handleChange} className={getInputClass('organizationSize')}><option value="">Select Size</option>{ORGANIZATION_SIZE_OPTIONS.map(sz => (<option key={sz} value={sz}>{sz}</option>))}</select></div>
                   </div>
                 </div>
               )}
@@ -1395,19 +1452,9 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                     <div className="w-9 h-9 rounded-xl bg-[#F8F5FF] flex items-center justify-center"><FileText className="w-4.5 h-4.5 text-[#42326E]" /></div>
                     <div><h3 className="text-lg font-bold text-[#2C1B57]">Job Description</h3><p className="text-xs text-[#6F687A]">Describe the role, responsibilities, and requirements</p></div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-[#49454F] mb-1.5">Description <span className="text-red-400">*</span><span className="font-normal text-[#98A2B3] ml-1">(min 20 characters)</span></label>
-                    <textarea name="jobDescription" value={formData.jobDescription} onChange={handleChange} onBlur={handleBlur} rows={8} placeholder="Describe the overall scope, responsibilities, work environment, and impact..." className={`${getInputClass('jobDescription')} resize-vertical leading-relaxed`} />
-                    <div className="flex justify-between mt-1"><FieldError name="jobDescription" /><span className={`text-[10px] font-medium ${formData.jobDescription.length > 0 && formData.jobDescription.length < 20 ? 'text-red-400' : 'text-[#98A2B3]'}`}>{formData.jobDescription.length}/20 min</span></div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-[#49454F] mb-1.5">Responsibilities <span className="font-normal text-[#98A2B3]">(one per line)</span></label>
-                    <textarea name="responsibilities" value={formData.responsibilities} onChange={handleChange} rows={5} placeholder={"Lead design sprints\nMaintain design system\nRun usability interviews"} className={`${getInputClass('responsibilities')} resize-vertical leading-relaxed`} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-[#49454F] mb-1.5">Requirements <span className="font-normal text-[#98A2B3]">(one per line)</span></label>
-                    <textarea name="requirements" value={formData.requirements} onChange={handleChange} rows={5} placeholder={"4+ years in product design\nExperience with design systems\nStrong portfolio"} className={`${getInputClass('requirements')} resize-vertical leading-relaxed`} />
-                  </div>
+                  <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Description <span className="text-red-400">*</span><span className="font-normal text-[#98A2B3] ml-1">(min 20 characters)</span></label><textarea name="jobDescription" value={formData.jobDescription} onChange={handleChange} onBlur={handleBlur} rows={8} placeholder="Describe the overall scope, responsibilities, work environment, and impact..." className={`${getInputClass('jobDescription')} resize-vertical leading-relaxed`} /><div className="flex justify-between mt-1"><FieldError name="jobDescription" /><span className={`text-[10px] font-medium ${formData.jobDescription.length > 0 && formData.jobDescription.length < 20 ? 'text-red-400' : 'text-[#98A2B3]'}`}>{formData.jobDescription.length}/20 min</span></div></div>
+                  <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Responsibilities <span className="font-normal text-[#98A2B3]">(one per line)</span></label><textarea name="responsibilities" value={formData.responsibilities} onChange={handleChange} rows={5} placeholder={"Lead design sprints\nMaintain design system\nRun usability interviews"} className={`${getInputClass('responsibilities')} resize-vertical leading-relaxed`} /></div>
+                  <div><label className="block text-xs font-bold text-[#49454F] mb-1.5">Requirements <span className="font-normal text-[#98A2B3]">(one per line)</span></label><textarea name="requirements" value={formData.requirements} onChange={handleChange} rows={5} placeholder={"4+ years in product design\nExperience with design systems\nStrong portfolio"} className={`${getInputClass('requirements')} resize-vertical leading-relaxed`} /></div>
                 </div>
               )}
 
@@ -1417,18 +1464,9 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                     <div className="w-9 h-9 rounded-xl bg-[#F8F5FF] flex items-center justify-center"><Zap className="w-4.5 h-4.5 text-[#42326E]" /></div>
                     <div><h3 className="text-lg font-bold text-[#2C1B57]">Skills, Benefits & Languages</h3><p className="text-xs text-[#6F687A]">Add tags for skills, benefits, and languages</p></div>
                   </div>
-                  <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl">
-                    <div className="flex items-center gap-2 mb-3"><span className="text-base">🛠</span><span className="text-sm font-bold text-[#2C1B57]">Skills Required</span></div>
-                    <TagInput value={formData.skills} onChange={v => setFormData(prev => ({ ...prev, skills: v }))} placeholder="Type a skill and press Enter" suggestions={SKILL_SUGGESTIONS} colorScheme="purple" />
-                  </div>
-                  <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl">
-                    <div className="flex items-center gap-2 mb-3"><span className="text-base">🎁</span><span className="text-sm font-bold text-[#2C1B57]">Benefits Offered</span></div>
-                    <TagInput value={formData.benefits} onChange={v => setFormData(prev => ({ ...prev, benefits: v }))} placeholder="Type a benefit and press Enter" suggestions={BENEFIT_SUGGESTIONS} colorScheme="green" />
-                  </div>
-                  <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl">
-                    <div className="flex items-center gap-2 mb-3"><span className="text-base">🗣</span><span className="text-sm font-bold text-[#2C1B57]">Languages Required</span></div>
-                    <TagInput value={formData.languages} onChange={v => setFormData(prev => ({ ...prev, languages: v }))} placeholder="Type a language and press Enter" suggestions={LANGUAGE_SUGGESTIONS} colorScheme="amber" />
-                  </div>
+                  <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl"><div className="flex items-center gap-2 mb-3"><span className="text-base">🛠</span><span className="text-sm font-bold text-[#2C1B57]">Skills Required</span></div><TagInput value={formData.skills} onChange={v => setFormData(prev => ({ ...prev, skills: v }))} placeholder="Type a skill and press Enter" suggestions={SKILL_SUGGESTIONS} colorScheme="purple" /></div>
+                  <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl"><div className="flex items-center gap-2 mb-3"><span className="text-base">🎁</span><span className="text-sm font-bold text-[#2C1B57]">Benefits Offered</span></div><TagInput value={formData.benefits} onChange={v => setFormData(prev => ({ ...prev, benefits: v }))} placeholder="Type a benefit and press Enter" suggestions={BENEFIT_SUGGESTIONS} colorScheme="green" /></div>
+                  <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl"><div className="flex items-center gap-2 mb-3"><span className="text-base">🗣</span><span className="text-sm font-bold text-[#2C1B57]">Languages Required</span></div><TagInput value={formData.languages} onChange={v => setFormData(prev => ({ ...prev, languages: v }))} placeholder="Type a language and press Enter" suggestions={LANGUAGE_SUGGESTIONS} colorScheme="amber" /></div>
                 </div>
               )}
 
@@ -1495,10 +1533,7 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                       <div className="flex flex-col items-center gap-1"><ArrowRight className="w-5 h-5 text-[#98A2B3]" /><span className="text-[10px] font-bold text-[#6F687A]">TO</span></div>
                       <ClockPicker label="End Time" value={timingEnd} onChange={setTimingEnd} />
                     </div>
-                    <div className="pt-3 border-t border-dashed border-[#E8E3EF] flex items-center justify-between flex-wrap gap-2">
-                      <span className="text-[10px] font-bold text-[#6F687A] tracking-wider">TIMING</span>
-                      <div className="flex items-center gap-2"><span className="px-2.5 py-1 bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] rounded-lg text-xs font-bold font-mono">{formatTo12hString(timingStart)}</span><span className="text-[#98A2B3] font-bold">→</span><span className="px-2.5 py-1 bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] rounded-lg text-xs font-bold font-mono">{formatTo12hString(timingEnd)}</span></div>
-                    </div>
+                    <div className="pt-3 border-t border-dashed border-[#E8E3EF] flex items-center justify-between flex-wrap gap-2"><span className="text-[10px] font-bold text-[#6F687A] tracking-wider">TIMING</span><div className="flex items-center gap-2"><span className="px-2.5 py-1 bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] rounded-lg text-xs font-bold font-mono">{formatTo12hString(timingStart)}</span><span className="text-[#98A2B3] font-bold">→</span><span className="px-2.5 py-1 bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] rounded-lg text-xs font-bold font-mono">{formatTo12hString(timingEnd)}</span></div></div>
                   </div>
                   <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl space-y-4">
                     <div className="flex items-center gap-2"><span className="text-base">📅</span><span className="text-sm font-bold text-[#2C1B57]">Working Days</span></div>
@@ -1532,12 +1567,8 @@ export const PostJobView: React.FC<PostJobViewProps> = ({
                   <div className="p-5 bg-[#FAFAFA] border border-[#E8E3EF] rounded-2xl space-y-4">
                     <div className="flex items-center gap-2"><Eye className="w-4 h-4 text-[#42326E]" /><span className="text-sm font-bold text-[#2C1B57]">Visibility on Job Listing</span></div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className={`p-4 rounded-xl border-2 transition-all ${formData.contactVisibilityWhatsapp ? 'border-emerald-400 bg-emerald-50/40' : 'border-[#E8E3EF] bg-white'}`}>
-                        <div className="flex items-center justify-between gap-2"><div><p className="text-xs font-bold text-[#2C1B57]">WhatsApp</p><p className="text-[10px] text-[#6F687A] mt-0.5">{formData.contactVisibilityWhatsapp ? '✓ Visible' : '✗ Hidden'}</p></div><button type="button" onClick={() => setFormData(prev => ({ ...prev, contactVisibilityWhatsapp: !prev.contactVisibilityWhatsapp }))} className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${formData.contactVisibilityWhatsapp ? 'bg-emerald-500' : 'bg-gray-300'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${formData.contactVisibilityWhatsapp ? 'left-[22px]' : 'left-0.5'}`} /></button></div>
-                      </div>
-                      <div className={`p-4 rounded-xl border-2 transition-all ${formData.contactVisibilityMobile ? 'border-[#42326E] bg-[#F8F5FF]' : 'border-[#E8E3EF] bg-white'}`}>
-                        <div className="flex items-center justify-between gap-2"><div><p className="text-xs font-bold text-[#2C1B57]">Mobile Call</p><p className="text-[10px] text-[#6F687A] mt-0.5">{formData.contactVisibilityMobile ? '✓ Visible' : '✗ Hidden'}</p></div><button type="button" onClick={() => setFormData(prev => ({ ...prev, contactVisibilityMobile: !prev.contactVisibilityMobile }))} className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${formData.contactVisibilityMobile ? 'bg-[#42326E]' : 'bg-gray-300'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${formData.contactVisibilityMobile ? 'left-[22px]' : 'left-0.5'}`} /></button></div>
-                      </div>
+                      <div className={`p-4 rounded-xl border-2 transition-all ${formData.contactVisibilityWhatsapp ? 'border-emerald-400 bg-emerald-50/40' : 'border-[#E8E3EF] bg-white'}`}><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-bold text-[#2C1B57]">WhatsApp</p><p className="text-[10px] text-[#6F687A] mt-0.5">{formData.contactVisibilityWhatsapp ? '✓ Visible' : '✗ Hidden'}</p></div><button type="button" onClick={() => setFormData(prev => ({ ...prev, contactVisibilityWhatsapp: !prev.contactVisibilityWhatsapp }))} className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${formData.contactVisibilityWhatsapp ? 'bg-emerald-500' : 'bg-gray-300'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${formData.contactVisibilityWhatsapp ? 'left-[22px]' : 'left-0.5'}`} /></button></div></div>
+                      <div className={`p-4 rounded-xl border-2 transition-all ${formData.contactVisibilityMobile ? 'border-[#42326E] bg-[#F8F5FF]' : 'border-[#E8E3EF] bg-white'}`}><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-bold text-[#2C1B57]">Mobile Call</p><p className="text-[10px] text-[#6F687A] mt-0.5">{formData.contactVisibilityMobile ? '✓ Visible' : '✗ Hidden'}</p></div><button type="button" onClick={() => setFormData(prev => ({ ...prev, contactVisibilityMobile: !prev.contactVisibilityMobile }))} className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${formData.contactVisibilityMobile ? 'bg-[#42326E]' : 'bg-gray-300'}`}><span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${formData.contactVisibilityMobile ? 'left-[22px]' : 'left-0.5'}`} /></button></div></div>
                     </div>
                   </div>
                 </div>

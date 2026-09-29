@@ -45,6 +45,7 @@ import { NotificationsView } from './components/NotificationsView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { CompanyProfileView } from './components/CompanyProfileView';
 import { SettingsView } from './components/SettingsView';
+import { SubscriptionView } from './components/SubscriptionView';
 
 // Icons
 import {
@@ -64,7 +65,22 @@ import {
   X,
   ExternalLink,
   LogOut,
+  Sparkles,
 } from 'lucide-react';
+
+// ✅ ONE-TIME LOCAL CACHE CLEANUP for legacy fake emails
+try {
+  const raw = localStorage.getItem('verihire_user');
+  if (
+    raw &&
+    (raw.includes('@phone.verihire.local') ||
+      raw.includes('"Verified Recruiter"') ||
+      raw.includes('"Verihire Talent Technologies"'))
+  ) {
+    localStorage.removeItem('verihire_user');
+    console.log('🧹 [App] Cleared legacy cached user data');
+  }
+} catch {}
 
 // Protected routes that require authentication
 const PROTECTED_ROUTES: AppRoute[] = [
@@ -81,10 +97,32 @@ const PROTECTED_ROUTES: AppRoute[] = [
   'analytics',
   'company',
   'settings',
+  'subscription',
 ];
 
 // Routes that require verified company
 const VERIFIED_ROUTES: AppRoute[] = ['post-job', 'edit-job'];
+
+// ✅ Helper: detect fake phone-generated emails
+const isFakePhoneEmail = (email?: string): boolean => {
+  if (!email) return false;
+  return String(email).includes('@phone.verihire.local');
+};
+
+// ✅ Helper: get clean display email (never show fake ones)
+const getDisplayEmail = (user?: AuthUser | null): string => {
+  if (!user?.email) return '';
+  return isFakePhoneEmail(user.email) ? '' : user.email;
+};
+
+// ✅ Helper: get best contact info for display
+const getContactLabel = (user?: AuthUser | null): string => {
+  if (!user) return '';
+  const cleanEmail = getDisplayEmail(user);
+  if (cleanEmail) return cleanEmail;
+  if (user.phone) return user.phone;
+  return 'Complete your profile';
+};
 
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<AppRoute>('landing');
@@ -95,6 +133,25 @@ export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
     return authService.getCurrentUser();
   });
+
+  // ✅ ON APP LOAD — Force-refresh user from server (clears stale cache)
+  useEffect(() => {
+    const hydrateUser = async () => {
+      if (authService.isAuthenticated()) {
+        try {
+          const freshUser = await authService.fetchMe();
+          if (freshUser) {
+            setAuthUser(freshUser);
+            console.log('✅ [App] User refreshed from server');
+          }
+        } catch (err) {
+          console.warn('⚠️ [App] Failed to refresh user session:', err);
+        }
+      }
+    };
+    hydrateUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ═══════════════════════════════════════════════════════
   // JOB EDIT / VIEW STATE
@@ -197,14 +254,17 @@ export default function App() {
   // ═══════════════════════════════════════════════════════
   // AUTH HANDLERS
   // ═══════════════════════════════════════════════════════
-  const handleLoginSuccess = useCallback(
-    (user: AuthUser) => {
-      setAuthUser(user);
-      setCurrentRoute('dashboard');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-    []
-  );
+  const handleLoginSuccess = useCallback(async (user: AuthUser) => {
+    setAuthUser(user);
+    setCurrentRoute('dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // ✅ Refresh from server right after login for the latest clean data
+    try {
+      const fresh = await authService.fetchMe();
+      if (fresh) setAuthUser(fresh);
+    } catch {}
+  }, []);
 
   const handleLogout = useCallback(async () => {
     await authService.logout();
@@ -215,24 +275,25 @@ export default function App() {
     setMobileMenuOpen(false);
   }, [showToast]);
 
-  const handleUpdateAuthUser = useCallback(
-    (updates: Partial<AuthUser>) => {
-      setAuthUser((prev) => {
-        if (!prev) return null;
-        const updated = { ...prev, ...updates };
-        authService.updateCachedUser(updates);
-        return updated;
-      });
-    },
-    []
-  );
+  const handleUpdateAuthUser = useCallback((updates: Partial<AuthUser>) => {
+    setAuthUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, ...updates };
+      authService.updateCachedUser(updates);
+      return updated;
+    });
+  }, []);
+
+  // ✅ NEW: Full user replacement (used by Settings after profile save)
+  const handleReplaceAuthUser = useCallback((newUser: AuthUser) => {
+    setAuthUser(newUser);
+  }, []);
 
   // ═══════════════════════════════════════════════════════
-  // NAVIGATION — FIXED: Post Job now opens correctly
+  // NAVIGATION
   // ═══════════════════════════════════════════════════════
   const handleNavigate = useCallback(
     (route: AppRoute) => {
-      // Step 1: Check authentication for protected routes
       if (PROTECTED_ROUTES.includes(route) && !authUser) {
         showToast('Please sign in to access the recruiter portal');
         setCurrentRoute('login');
@@ -241,19 +302,9 @@ export default function App() {
         return;
       }
 
-      // Step 2: For post-job and edit-job, let the PostJobView component
-      // handle the verification gate internally with its own UI.
-      // We no longer block navigation here — the component shows
-      // a proper "verification required" screen with action buttons.
-      //
-      // REMOVED the old block:
-      // if (route === 'post-job' && authUser && !authUser.isVerified) { ... }
-
-      // Step 3: Clear edit/view state when navigating away
       if (route !== 'edit-job') setEditingJobId(null);
       if (route !== 'job-details') setViewingJobId(null);
 
-      // Step 4: Navigate
       setCurrentRoute(route);
       setMobileMenuOpen(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -268,7 +319,6 @@ export default function App() {
         setCurrentRoute('login');
         return;
       }
-      // Let PostJobView handle the verification gate internally
       setEditingJobId(jobId);
       setViewingJobId(null);
       setCurrentRoute('edit-job');
@@ -290,9 +340,7 @@ export default function App() {
   const handleMoveCandidateStage = useCallback(
     async (candidateId: string, newStage: PipelineStage) => {
       setCandidates((prev) =>
-        prev.map((c) =>
-          c.id === candidateId ? { ...c, stage: newStage } : c
-        )
+        prev.map((c) => (c.id === candidateId ? { ...c, stage: newStage } : c))
       );
       const candidate = candidates.find((c) => c.id === candidateId);
       showToast(
@@ -344,9 +392,7 @@ export default function App() {
     async (candidateId: string, noteText: string) => {
       setCandidates((prev) =>
         prev.map((c) =>
-          c.id === candidateId
-            ? { ...c, notes: [...c.notes, noteText] }
-            : c
+          c.id === candidateId ? { ...c, notes: [...c.notes, noteText] } : c
         )
       );
       showToast('Internal evaluation note appended');
@@ -412,9 +458,7 @@ export default function App() {
   const handleUpdateJobStatus = useCallback(
     (jobId: string, newStatus: JobListing['status']) => {
       setJobs((prev) =>
-        prev.map((j) =>
-          j.id === jobId ? { ...j, status: newStatus } : j
-        )
+        prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j))
       );
       showToast(`Job status updated to ${newStatus}`);
     },
@@ -464,9 +508,7 @@ export default function App() {
   const handleUpdateInterviewStatus = useCallback(
     (interviewId: string, status: Interview['status']) => {
       setInterviews((prev) =>
-        prev.map((i) =>
-          i.id === interviewId ? { ...i, status } : i
-        )
+        prev.map((i) => (i.id === interviewId ? { ...i, status } : i))
       );
       showToast(`Interview status set to ${status}`);
     },
@@ -479,9 +521,7 @@ export default function App() {
   const handleOpenMessage = useCallback(
     (candidate: Candidate) => {
       setActiveCandidate(null);
-      const existing = threads.find(
-        (t) => t.candidateId === candidate.id
-      );
+      const existing = threads.find((t) => t.candidateId === candidate.id);
       if (!existing) {
         const newThread: MessageThread = {
           id: `thread-${Date.now()}`,
@@ -538,9 +578,7 @@ export default function App() {
   // NOTIFICATION HANDLERS
   // ═══════════════════════════════════════════════════════
   const handleMarkAllNotificationsRead = useCallback(() => {
-    setNotifications((prev) =>
-      prev.map((n) => ({ ...n, read: true }))
-    );
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     showToast('All notifications marked as read');
   }, [showToast]);
 
@@ -558,6 +596,19 @@ export default function App() {
   }, [fetchCandidates, showToast]);
 
   // ═══════════════════════════════════════════════════════
+  // SUBSCRIPTION HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handleSubscriptionSuccess = useCallback(async () => {
+    // Refresh user info to get updated subscription data
+    try {
+      const fresh = await authService.fetchMe();
+      if (fresh) setAuthUser(fresh);
+    } catch {}
+    showToast('Subscription activated successfully!');
+    setCurrentRoute('dashboard');
+  }, [showToast]);
+
+  // ═══════════════════════════════════════════════════════
   // COMPUTED VALUES
   // ═══════════════════════════════════════════════════════
   const unreadMessagesCount = useMemo(
@@ -570,14 +621,30 @@ export default function App() {
     [notifications]
   );
 
-  const getUserInitials = useCallback((name: string) => {
+  const getUserInitials = useCallback((name?: string) => {
+    if (!name || !name.trim()) return 'R';
     return name
-      .split(' ')
+      .trim()
+      .split(/\s+/)
       .map((n) => n[0])
       .join('')
       .slice(0, 2)
       .toUpperCase();
   }, []);
+
+  const sidebarDisplayName = useMemo(() => {
+    if (!authUser) return 'Guest User';
+    if (authUser.name && authUser.name.trim()) return authUser.name;
+    return 'Complete your profile';
+  }, [authUser]);
+
+  const sidebarSubline = useMemo(() => {
+    if (!authUser) return '';
+    if (authUser.companyName && authUser.companyName.trim()) {
+      return authUser.companyName;
+    }
+    return getContactLabel(authUser);
+  }, [authUser]);
 
   const navItems = useMemo(
     () => [
@@ -599,8 +666,7 @@ export default function App() {
         id: 'messages' as AppRoute,
         label: 'Messages',
         icon: MessageSquare,
-        badge:
-          unreadMessagesCount > 0 ? unreadMessagesCount : undefined,
+        badge: unreadMessagesCount > 0 ? unreadMessagesCount : undefined,
       },
       {
         id: 'notifications' as AppRoute,
@@ -624,6 +690,11 @@ export default function App() {
         label: 'Company Profile',
         icon: Building,
       },
+      {
+        id: 'subscription' as AppRoute,
+        label: 'Subscription',
+        icon: Sparkles,
+      },
       { id: 'settings' as AppRoute, label: 'Settings', icon: Settings },
     ],
     []
@@ -634,19 +705,14 @@ export default function App() {
   // ═══════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#FCFCF7] text-[#29233A] flex flex-col font-sans">
-      <Toast
-        message={toastMessage}
-        onClose={() => setToastMessage(null)}
-      />
+      <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
 
       <CandidateDrawer
         candidate={activeCandidate}
         onClose={() => setActiveCandidate(null)}
         onStageChange={(id, stage) => {
           handleMoveCandidateStage(id, stage);
-          setActiveCandidate((prev) =>
-            prev ? { ...prev, stage } : null
-          );
+          setActiveCandidate((prev) => (prev ? { ...prev, stage } : null));
         }}
         onBookmarkToggle={(id) => {
           handleBookmarkToggle(id);
@@ -733,8 +799,7 @@ export default function App() {
                   (item.id === 'my-jobs' &&
                     (currentRoute === 'edit-job' ||
                       currentRoute === 'job-details')) ||
-                  (item.id === 'post-job' &&
-                    currentRoute === 'edit-job');
+                  (item.id === 'post-job' && currentRoute === 'edit-job');
                 return (
                   <button
                     key={item.id}
@@ -789,31 +854,30 @@ export default function App() {
               </button>
             </div>
 
+            {/* Footer Profile */}
             <div className="p-3 border-t border-white/10">
               <div
-                onClick={() => handleNavigate('company')}
+                onClick={() => handleNavigate('settings')}
                 className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors"
+                title="Edit profile"
               >
                 {authUser?.avatar?.url ? (
                   <img
                     src={authUser.avatar.url}
-                    alt={authUser.name}
+                    alt={authUser.name || 'Profile'}
                     className="w-9 h-9 rounded-xl object-cover shadow-xs"
                   />
                 ) : (
                   <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#42326E] to-[#B29CFE] flex items-center justify-center text-white font-bold text-xs shadow-xs">
-                    {authUser
-                      ? getUserInitials(authUser.name)
-                      : 'BD'}
+                    {getUserInitials(authUser?.name)}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-bold truncate text-white">
-                    {authUser?.name || 'Guest User'}
+                    {sidebarDisplayName}
                   </div>
                   <div className="text-[10px] text-white/50 truncate">
-                    {authUser?.companyName ||
-                      'Lead Recruiter • Verihire'}
+                    {sidebarSubline}
                   </div>
                 </div>
               </div>
@@ -850,10 +914,7 @@ export default function App() {
                   value={globalSearch}
                   onChange={(e) => setGlobalSearch(e.target.value)}
                   onKeyDown={(e) => {
-                    if (
-                      e.key === 'Enter' &&
-                      globalSearch.trim()
-                    ) {
+                    if (e.key === 'Enter' && globalSearch.trim()) {
                       handleNavigate('candidates');
                     }
                   }}
@@ -863,6 +924,26 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-2">
+                {/* ✅ Subscription Badge in Header */}
+                {authUser?.subscription?.tier && (
+                  <button
+                    onClick={() => handleNavigate('subscription')}
+                    className={`hidden md:inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all hover:shadow-sm ${
+                      authUser.subscription.tier === 'enterprise'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                        : authUser.subscription.tier === 'standard'
+                          ? 'bg-[#EDE6FA] text-[#42326E] border-[#D7C8ED] hover:bg-[#D7C8ED]'
+                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                    }`}
+                    title="Manage subscription"
+                  >
+                    {authUser.subscription.tier === 'enterprise' && '👑'}
+                    {authUser.subscription.tier === 'standard' && '⚡'}
+                    {authUser.subscription.tier === 'basic' && '🛡️'}
+                    <span className="capitalize">{authUser.subscription.name}</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => handleNavigate('messages')}
                   className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-white rounded-xl relative transition-colors"
@@ -915,15 +996,52 @@ export default function App() {
                 />
                 <div className="relative w-64 bg-[#2C1B57] text-white flex flex-col h-full shadow-2xl z-10 animate-in slide-in-from-left duration-200">
                   <div className="p-4 flex items-center justify-between border-b border-white/10">
-                    <span className="font-extrabold text-base">
-                      Verihire
-                    </span>
+                    <span className="font-extrabold text-base">Verihire</span>
                     <button
                       onClick={() => setMobileMenuOpen(false)}
                       className="p-1 rounded-lg text-white/70 hover:text-white"
                     >
                       <X className="w-5 h-5" />
                     </button>
+                  </div>
+
+                  <div className="p-3 border-b border-white/10">
+                    <div className="flex items-center gap-3 p-2">
+                      {authUser?.avatar?.url ? (
+                        <img
+                          src={authUser.avatar.url}
+                          alt={authUser.name || 'Profile'}
+                          className="w-9 h-9 rounded-xl object-cover"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#42326E] to-[#B29CFE] flex items-center justify-center text-white font-bold text-xs">
+                          {getUserInitials(authUser?.name)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold truncate text-white">
+                          {sidebarDisplayName}
+                        </div>
+                        <div className="text-[10px] text-white/50 truncate">
+                          {sidebarSubline}
+                        </div>
+                        {/* ✅ Subscription tier in mobile drawer */}
+                        {authUser?.subscription?.tier && (
+                          <div className={`mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold rounded-full ${
+                            authUser.subscription.tier === 'enterprise'
+                              ? 'bg-amber-500/20 text-amber-300'
+                              : authUser.subscription.tier === 'standard'
+                                ? 'bg-[#B29CFE]/30 text-[#E0D4FC]'
+                                : 'bg-white/10 text-white/70'
+                          }`}>
+                            {authUser.subscription.tier === 'enterprise' && '👑'}
+                            {authUser.subscription.tier === 'standard' && '⚡'}
+                            {authUser.subscription.tier === 'basic' && '🛡️'}
+                            {authUser.subscription.name}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-3 space-y-1">
@@ -960,9 +1078,7 @@ export default function App() {
                         return (
                           <button
                             key={item.id}
-                            onClick={() =>
-                              handleNavigate(item.id)
-                            }
+                            onClick={() => handleNavigate(item.id)}
                             className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold ${
                               isActive
                                 ? 'bg-white/15 text-white'
@@ -976,9 +1092,7 @@ export default function App() {
                       })}
 
                       <button
-                        onClick={() =>
-                          handleNavigate('landing')
-                        }
+                        onClick={() => handleNavigate('landing')}
                         className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-white/60 hover:text-white"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -1004,21 +1118,15 @@ export default function App() {
                 <DashboardView
                   candidates={candidates}
                   onNavigate={handleNavigate}
-                  onSelectCandidate={(cand) =>
-                    setActiveCandidate(cand)
-                  }
-                  onMoveCandidateStage={
-                    handleMoveCandidateStage
-                  }
-                  onScheduleInterview={
-                    handleOpenScheduleModal
-                  }
+                  onSelectCandidate={(cand) => setActiveCandidate(cand)}
+                  onMoveCandidateStage={handleMoveCandidateStage}
+                  onScheduleInterview={handleOpenScheduleModal}
+                  authUser={authUser}
                 />
               )}
 
               {(currentRoute === 'post-job' ||
-                (currentRoute === 'edit-job' &&
-                  editingJobId)) && (
+                (currentRoute === 'edit-job' && editingJobId)) && (
                 <PostJobView
                   onPublishJob={handlePublishJob}
                   onSaveDraft={handleSaveJobDraft}
@@ -1026,22 +1134,19 @@ export default function App() {
                   authUser={authUser}
                   onShowToast={showToast}
                   editJobId={
-                    currentRoute === 'edit-job'
-                      ? editingJobId
-                      : null
+                    currentRoute === 'edit-job' ? editingJobId : null
                   }
                 />
               )}
 
-              {currentRoute === 'job-details' &&
-                viewingJobId && (
-                  <JobDetailsView
-                    jobId={viewingJobId}
-                    onNavigate={handleNavigate}
-                    onEditJob={handleEditJob}
-                    onShowToast={showToast}
-                  />
-                )}
+              {currentRoute === 'job-details' && viewingJobId && (
+                <JobDetailsView
+                  jobId={viewingJobId}
+                  onNavigate={handleNavigate}
+                  onEditJob={handleEditJob}
+                  onShowToast={showToast}
+                />
+              )}
 
               {currentRoute === 'my-jobs' && (
                 <MyJobsView
@@ -1057,14 +1162,12 @@ export default function App() {
                 <>
                   {candidatesLoading && (
                     <div className="p-8 text-center text-sm text-[#6F687A]">
-                      Loading verified candidates from your
-                      job applications...
+                      Loading verified candidates from your job applications...
                     </div>
                   )}
                   {candidatesError && !candidatesLoading && (
                     <div className="p-6 mx-6 mt-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-                      <strong>Error:</strong>{' '}
-                      {candidatesError}
+                      <strong>Error:</strong> {candidatesError}
                       <button
                         onClick={fetchCandidates}
                         className="ml-3 underline font-bold hover:text-red-800"
@@ -1073,47 +1176,30 @@ export default function App() {
                       </button>
                     </div>
                   )}
-                  {!candidatesLoading &&
-                    !candidatesError && (
-                      <CandidatesView
-                        candidates={candidates}
-                        onSelectCandidate={(cand) =>
-                          setActiveCandidate(cand)
-                        }
-                        onBookmarkToggle={
-                          handleBookmarkToggle
-                        }
-                        onShortlistCandidate={(cand) => {
-                          handleMoveCandidateStage(
-                            cand.id,
-                            'Shortlisted'
-                          );
-                          setCandidates((prev) =>
-                            prev.map((c) =>
-                              c.id === cand.id
-                                ? {
-                                    ...c,
-                                    bookmarked: true,
-                                  }
-                                : c
-                            )
-                          );
-                        }}
-                        onOpenMessage={handleOpenMessage}
-                      />
-                    )}
+                  {!candidatesLoading && !candidatesError && (
+                    <CandidatesView
+                      candidates={candidates}
+                      onSelectCandidate={(cand) => setActiveCandidate(cand)}
+                      onBookmarkToggle={handleBookmarkToggle}
+                      onShortlistCandidate={(cand) => {
+                        handleMoveCandidateStage(cand.id, 'Shortlisted');
+                        setCandidates((prev) =>
+                          prev.map((c) =>
+                            c.id === cand.id ? { ...c, bookmarked: true } : c
+                          )
+                        );
+                      }}
+                      onOpenMessage={handleOpenMessage}
+                    />
+                  )}
                 </>
               )}
 
               {currentRoute === 'shortlisted' && (
                 <ShortlistedView
                   candidates={candidates}
-                  onSelectCandidate={(cand) =>
-                    setActiveCandidate(cand)
-                  }
-                  onScheduleInterview={
-                    handleOpenScheduleModal
-                  }
+                  onSelectCandidate={(cand) => setActiveCandidate(cand)}
+                  onScheduleInterview={handleOpenScheduleModal}
                   onOpenMessage={handleOpenMessage}
                   onNavigate={handleNavigate}
                 />
@@ -1123,12 +1209,8 @@ export default function App() {
                 <InterviewsView
                   interviews={interviews}
                   candidates={candidates}
-                  onOpenScheduleModal={
-                    handleOpenScheduleModal
-                  }
-                  onUpdateStatus={
-                    handleUpdateInterviewStatus
-                  }
+                  onOpenScheduleModal={handleOpenScheduleModal}
+                  onUpdateStatus={handleUpdateInterviewStatus}
                   onNavigate={handleNavigate}
                   onShowToast={showToast}
                 />
@@ -1140,9 +1222,7 @@ export default function App() {
                   activeCandidateId={activeCandidate?.id}
                   onSendMessage={handleSendMessage}
                   onSelectCandidateDrawer={(name) => {
-                    const found = candidates.find(
-                      (c) => c.name === name
-                    );
+                    const found = candidates.find((c) => c.name === name);
                     if (found) setActiveCandidate(found);
                   }}
                 />
@@ -1151,16 +1231,12 @@ export default function App() {
               {currentRoute === 'notifications' && (
                 <NotificationsView
                   notifications={notifications}
-                  onMarkAllAsRead={
-                    handleMarkAllNotificationsRead
-                  }
+                  onMarkAllAsRead={handleMarkAllNotificationsRead}
                   onNavigate={handleNavigate}
                 />
               )}
 
-              {currentRoute === 'analytics' && (
-                <AnalyticsView />
-              )}
+              {currentRoute === 'analytics' && <AnalyticsView />}
 
               {currentRoute === 'company' && (
                 <CompanyProfileView
@@ -1176,6 +1252,16 @@ export default function App() {
                 <SettingsView
                   onResetData={handleResetData}
                   onShowToast={showToast}
+                  onUserUpdate={handleReplaceAuthUser}
+                />
+              )}
+
+              {/* ✅ NEW: Subscription Route */}
+              {currentRoute === 'subscription' && (
+                <SubscriptionView
+                  authUser={authUser}
+                  onSuccess={handleSubscriptionSuccess}
+                  onBack={() => handleNavigate('dashboard')}
                 />
               )}
             </main>

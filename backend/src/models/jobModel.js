@@ -9,6 +9,8 @@ const jobSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+
+    // ✅ NO HARDCODED DEFAULTS — must be provided by recruiter's actual profile
     companyName: { type: String, required: true },
     companyWebsite: { type: String, default: "" },
     companyLogo: {
@@ -22,6 +24,7 @@ const jobSchema = new mongoose.Schema(
       },
     ],
     companyInitials: { type: String, default: "" },
+
     location: {
       address: { type: String, default: "" },
       city: { type: String, required: true },
@@ -64,6 +67,8 @@ const jobSchema = new mongoose.Schema(
     benefits: [{ type: String }],
     jobTiming: { type: String, default: "" },
     workingDays: { type: String, default: "" },
+
+    // ✅ NO HARDCODED CONTACT — pulled from recruiter's actual profile
     contactPerson: {
       name: { type: String, default: "" },
       designation: { type: String, default: "" },
@@ -71,6 +76,7 @@ const jobSchema = new mongoose.Schema(
     recruiterWhatsappNumber: { type: String, default: "" },
     recruiterMobileNumber: { type: String, default: "" },
     recruiterEmail: { type: String, default: "" },
+
     applicationUrl: { type: String, default: "" },
     noPaymentInvolved: { type: Boolean, default: true },
     contactVisibility: {

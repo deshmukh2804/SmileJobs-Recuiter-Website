@@ -13,7 +13,9 @@ export type AppRoute =
   | 'notifications'
   | 'analytics'
   | 'company'
-  | 'settings';
+  | 'profile'      // ✅ NEW route for recruiter personal profile
+  | 'settings'
+    | 'subscription'; 
 
 export type PipelineStage =
   | 'Applied'
@@ -53,12 +55,11 @@ export interface Candidate {
   bookmarked: boolean;
   verified: VerificationStatus;
   notes: string[];
-  jobId?: string;        // NEW
-  jobTitle?: string;     // NEW
-  resumeUrl?: string;    // NEW
+  jobId?: string;
+  jobTitle?: string;
+  resumeUrl?: string;
 }
 
-// ... (rest of your types remain 100% the same — JobListing, Interview, ChatMessage, etc.)
 export interface JobListing {
   id: string;
   title: string;
@@ -213,10 +214,102 @@ export interface AuthUser {
   avatar?: { url?: string; public_id?: string };
   role: 'recruiter';
   loginMethod: 'google' | 'phone_otp' | 'email_otp';
+  // ✅ Which field is locked (cannot be edited) based on login method
+  lockedField?: 'phone' | 'email' | null;
   companyName?: string;
+  designation?: string;
   isVerified?: boolean;
   verificationStatus?: CompanyVerificationStatus;
   verificationSubmittedAt?: string | null;
   verificationReviewedAt?: string | null;
   rejectionReason?: string;
+}
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  avatar?: { url?: string; public_id?: string };
+  role: 'recruiter';
+  loginMethod: 'google' | 'phone_otp' | 'email_otp';
+  lockedField?: 'phone' | 'email' | null;
+  companyName?: string;
+  designation?: string;
+  isVerified?: boolean;
+  verificationStatus?: CompanyVerificationStatus;
+  verificationSubmittedAt?: string | null;
+  verificationReviewedAt?: string | null;
+  rejectionReason?: string;
+  // ✅ SUBSCRIPTION DATA (returned by /auth/me)
+  subscription?: {
+    id: string;
+    tier: string;
+    name: string;
+    status: string;
+    currentPeriodEnd: string;
+    paymentStatus: string;
+    cancelAtPeriodEnd?: boolean;
+  } | null;
+  usage?: {
+    jobsUsed: number;
+    jobLimit: number;
+    remainingJobs: number;
+    subscriptionActive: boolean;
+  } | null;
+}
+// ═══ SUBSCRIPTION TYPES ═══
+
+export interface SubscriptionPlan {
+  _id: string;
+  name: string;
+  tier: string; // dynamic from admin: 'basic' | 'standard' | 'enterprise' | custom
+  audience?: string;
+  price: number;
+  priceYearly?: number;
+  currency: string;
+  billingCycle: string;
+  description: string;
+  features: string[];
+  advantages?: string[];
+  jobPostLimit: number;
+  resumeViewLimit: number;
+  isPopular: boolean;
+  isActive: boolean;
+  discountPercent?: number;
+  trialDays?: number;
+  displayOrder?: number;
+}
+
+export interface SubscriptionUsage {
+  totalJobs: number;
+  activeJobs: number;
+  pausedJobs: number;
+  draftJobs: number;
+  closedJobs: number;
+  jobsUsed: number;
+  jobLimit: number;
+  remainingJobs: number;
+  subscriptionActive: boolean;
+  subscription: {
+    id: string;
+    tier: string;
+    name: string;
+    status: string;
+    currentPeriodEnd: string;
+    paymentStatus: string;
+    cancelAtPeriodEnd?: boolean;
+  } | null;
+}
+
+export interface RazorpayCheckoutInit {
+  isFreePlan: boolean;
+  subscription?: any;
+  orderId?: string;
+  razorpayKeyId?: string;
+  internalSubId?: string;
+  amount?: number;
+  currency?: string;
+  planName?: string;
+  planTier?: string;
 }

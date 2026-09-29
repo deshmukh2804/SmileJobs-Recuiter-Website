@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Candidate, PipelineStage, AppRoute } from '../types';
+import { AuthUser } from '../types';
 import {
   TrendingUp,
   Briefcase,
@@ -20,6 +21,7 @@ interface DashboardViewProps {
   onSelectCandidate: (candidate: Candidate) => void;
   onMoveCandidateStage: (candidateId: string, newStage: PipelineStage) => void;
   onScheduleInterview: (candidate: Candidate) => void;
+  authUser?: AuthUser | null;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -28,6 +30,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectCandidate,
   onMoveCandidateStage,
   onScheduleInterview,
+  authUser,
 }) => {
   const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<PipelineStage | null>(null);
@@ -76,15 +79,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="p-6 md:p-8 max-w-[1400px] mx-auto space-y-8 animate-in fade-in duration-200">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight">
-            Good morning, Bhavuk
-          </h1>
-          <p className="text-sm text-[#6F687A] mt-1">
-            Here is your live recruiting pipeline and candidate verification overview.
-          </p>
-        </div>
+      {/* Top Header */}
+<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+  <div>
+    <div className="flex items-center gap-2 flex-wrap">
+      <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight">
+        Good morning, Bhavuk
+      </h1>
+      {/* ✅ Subscription tier badge on dashboard */}
+      {authUser?.subscription?.tier && (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+          authUser.subscription.tier === 'enterprise'
+            ? 'bg-amber-50 text-amber-700 border-amber-200'
+            : authUser.subscription.tier === 'standard'
+              ? 'bg-[#EDE6FA] text-[#42326E] border-[#D7C8ED]'
+              : 'bg-gray-50 text-gray-600 border-gray-200'
+        }`}>
+          {authUser.subscription.tier === 'enterprise' && '👑'}
+          {authUser.subscription.tier === 'standard' && '⚡'}
+          {authUser.subscription.tier === 'basic' && '🛡️'}
+          {authUser.subscription.name}
+        </span>
+      )}
+    </div>
+    <p className="text-sm text-[#6F687A] mt-1">
+      Here is your live recruiting pipeline and candidate verification overview.
+    </p>
+  </div>
 
         <div className="flex items-center gap-3">
           <button

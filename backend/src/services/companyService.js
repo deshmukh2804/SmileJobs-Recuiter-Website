@@ -19,27 +19,100 @@ const computeInitials = (name = "") => {
     .toUpperCase();
 };
 
-// Helper: fetch or create verification doc for this recruiter
-const getOrCreateVerification = async (recruiter) => {
-  let v = await Verification.findOne({ recruiterId: recruiter._id });
+// ✅ CRITICAL: Sync recruiter data into verification document
+const syncVerificationSnapshot = async (recruiter, verification) => {
+  const p = recruiter.companyProfile || {};
+
+  verification.recruiterName = recruiter.name || "";
+  verification.recruiterEmail = recruiter.email || "";
+  verification.recruiterPhone = recruiter.phone || "";
+  verification.companyName = p.name || recruiter.companyName || "";
+
+  verification.companySnapshot = {
+    name: p.name || "",
+    industry: p.industry || "",
+    website: p.website || "",
+    about: p.about || "",
+    city: p.city || "",
+    state: p.state || "",
+    country: p.country || "",
+    registrationNumber: p.registrationNumber || "",
+    gstNumber: p.gstNumber || "",
+    panNumber: p.panNumber || "",
+    logoUrl: p.logo?.url || "",
+    contactEmail: p.contactEmail || "",
+    contactPhone: p.contactPhone || "",
+    contactPersonName: p.contactPerson?.name || "",
+    contactPersonDesignation: p.contactPerson?.designation || "",
+    organizationSize: p.organizationSize || p.teamSize || "",
+    establishedYear: p.establishedYear || null,
+  };
+
+  return verification;
+};
+
+// ✅ Get or create verification with automatic snapshot sync
+const getOrCreateVerification = async (recruiterId) => {
+  const recruiter = await Recruiter.findById(recruiterId);
+  if (!recruiter) throw new ApiError(404, "Recruiter not found");
+
+  let v = await Verification.findOne({ recruiterId });
   if (!v) {
-    v = await Verification.create({
-      recruiterId: recruiter._id,
-      recruiterName: recruiter.name,
-      recruiterEmail: recruiter.email,
-      companyName: recruiter.companyName,
+    v = new Verification({
+      recruiterId,
       status: "not_submitted",
     });
   }
+
+  // Always sync latest snapshot on read
+  await syncVerificationSnapshot(recruiter, v);
+  await v.save();
+
   return v;
 };
+
+const buildVerificationView = (recruiter, verification) => ({
+  recruiterId: recruiter._id,
+  recruiterName: recruiter.name || "",
+  recruiterEmail: recruiter.email || "",
+  recruiterPhone: recruiter.phone || "",
+  companyName: recruiter.companyName || recruiter.companyProfile?.name || "",
+  companySnapshot: {
+    name: recruiter.companyProfile?.name || "",
+    industry: recruiter.companyProfile?.industry || "",
+    website: recruiter.companyProfile?.website || "",
+    about: recruiter.companyProfile?.about || "",
+    city: recruiter.companyProfile?.city || "",
+    state: recruiter.companyProfile?.state || "",
+    country: recruiter.companyProfile?.country || "",
+    registrationNumber: recruiter.companyProfile?.registrationNumber || "",
+    gstNumber: recruiter.companyProfile?.gstNumber || "",
+    panNumber: recruiter.companyProfile?.panNumber || "",
+    logoUrl: recruiter.companyProfile?.logo?.url || "",
+    contactEmail: recruiter.companyProfile?.contactEmail || "",
+    contactPhone: recruiter.companyProfile?.contactPhone || "",
+    contactPersonName: recruiter.companyProfile?.contactPerson?.name || "",
+    contactPersonDesignation: recruiter.companyProfile?.contactPerson?.designation || "",
+    organizationSize: recruiter.companyProfile?.organizationSize || recruiter.companyProfile?.teamSize || "",
+    establishedYear: recruiter.companyProfile?.establishedYear || null,
+  },
+  documents: verification.documents,
+  status: verification.status,
+  submittedAt: verification.submittedAt,
+  reviewedAt: verification.reviewedAt,
+  reviewedBy: verification.reviewedBy,
+  rejectionReason: verification.rejectionReason,
+  adminNotes: verification.adminNotes,
+  clarificationDocs: verification.clarificationDocs || [],
+  clarificationMessage: verification.clarificationMessage || "",
+});
 
 class CompanyService {
   async getCompanyProfile(recruiterId) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
 
-    const verification = await getOrCreateVerification(recruiter);
+    const verification = await getOrCreateVerification(recruiter._id);
 
     return {
       companyProfile: recruiter.companyProfile,
@@ -83,6 +156,17 @@ class CompanyService {
 
     await recruiter.save();
 
+    // ✅ SYNC verification snapshot after profile update
+    let verification = await Verification.findOne({ recruiterId: recruiter._id });
+    if (!verification) {
+      verification = new Verification({
+        recruiterId: recruiter._id,
+        status: "not_submitted",
+      });
+    }
+    await syncVerificationSnapshot(recruiter, verification);
+    await verification.save();
+
     return {
       companyProfile: recruiter.companyProfile,
       verificationStatus: recruiter.verificationStatus,
@@ -120,6 +204,14 @@ class CompanyService {
     };
 
     await recruiter.save();
+
+    // ✅ SYNC verification snapshot
+    let verification = await Verification.findOne({ recruiterId: recruiter._id });
+    if (verification) {
+      await syncVerificationSnapshot(recruiter, verification);
+      await verification.save();
+    }
+
     return { logo: recruiter.companyProfile.logo };
   }
 
@@ -128,7 +220,6 @@ class CompanyService {
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
     if (!file) throw new ApiError(400, "No file uploaded");
 
-    // Enforce max 5 photos
     const currentGalleryCount = recruiter.companyProfile?.gallery?.length || 0;
     if (currentGalleryCount >= MAX_GALLERY_PHOTOS) {
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
@@ -165,7 +256,6 @@ class CompanyService {
     };
   }
 
-  // ⭐ NEW: Batch upload multiple gallery images at once
   async uploadGalleryImagesBatch(recruiterId, files) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
@@ -178,7 +268,6 @@ class CompanyService {
     const availableSlots = MAX_GALLERY_PHOTOS - currentCount;
 
     if (availableSlots <= 0) {
-      // Clean up all temp files before throwing
       files.forEach((f) => {
         if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
       });
@@ -188,11 +277,9 @@ class CompanyService {
       );
     }
 
-    // Only process files that fit within remaining slots
     const filesToProcess = files.slice(0, availableSlots);
     const skippedCount = files.length - filesToProcess.length;
 
-    // Upload all files in parallel for speed
     const results = await Promise.allSettled(
       filesToProcess.map(async (file) => {
         try {
@@ -212,7 +299,6 @@ class CompanyService {
             error: err.message,
           };
         } finally {
-          // Always clean up temp disk file
           if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
         }
       })
@@ -236,13 +322,11 @@ class CompanyService {
       }
     });
 
-    // Save all successful uploads to DB in one operation
     if (uploadedImages.length > 0) {
       recruiter.companyProfile.gallery.push(...uploadedImages);
       await recruiter.save();
     }
 
-    // If all uploads failed, throw an error
     if (uploadedImages.length === 0 && errors.length > 0) {
       throw new ApiError(500, `All uploads failed: ${errors[0].error}`);
     }
@@ -257,7 +341,6 @@ class CompanyService {
     };
   }
 
-  // 🛠️ FIXED: Safe gallery image deletion (handles missing publicId)
   async deleteGalleryImage(recruiterId, imageId) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
@@ -265,23 +348,16 @@ class CompanyService {
     const img = recruiter.companyProfile?.gallery?.id(imageId);
     if (!img) throw new ApiError(404, "Gallery image not found");
 
-    // FIX: Use publicId first, fallback to extracting from URL
     const cloudinaryIdentifier = img.publicId || img.url;
 
     if (cloudinaryIdentifier) {
       try {
         await deleteFromCloudinary(cloudinaryIdentifier);
       } catch (e) {
-        // Log warning but do NOT block the DB deletion
         console.warn("Cloudinary delete warning:", e.message);
       }
-    } else {
-      console.warn(
-        `⚠️ Gallery image ${imageId} has no publicId or URL — skipping Cloudinary delete`
-      );
     }
 
-    // Always remove from DB regardless of Cloudinary result
     recruiter.companyProfile.gallery.pull(imageId);
     await recruiter.save();
 
@@ -319,12 +395,12 @@ class CompanyService {
       uploadedAt: new Date(),
     };
 
-    // Store in dedicated verifications collection
-    const verification = await getOrCreateVerification(recruiter);
+    const verification = await getOrCreateVerification(recruiter._id);
     verification.documents.push(newDoc);
+
+    await syncVerificationSnapshot(recruiter, verification);
     await verification.save();
 
-    // Also mirror in recruiter document for backwards compatibility
     recruiter.verificationDocuments.push(newDoc);
     await recruiter.save();
 
@@ -338,7 +414,7 @@ class CompanyService {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
 
-    const verification = await getOrCreateVerification(recruiter);
+    const verification = await getOrCreateVerification(recruiter._id);
     const doc = verification.documents.id(documentId);
     if (!doc) throw new ApiError(404, "Document not found");
 
@@ -358,7 +434,6 @@ class CompanyService {
     verification.documents.pull(documentId);
     await verification.save();
 
-    // Also remove from recruiter mirror
     const mirrorDoc = recruiter.verificationDocuments.find(
       (d) => d.public_id === doc.public_id
     );
@@ -368,35 +443,72 @@ class CompanyService {
     return { totalDocuments: verification.documents.length };
   }
 
+  // ✅ CRITICAL FIX: Submit verification with proper validation and detailed error messages
   async submitForVerification(recruiterId) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
 
-    const p = recruiter.companyProfile;
-    const required = [
-      "name",
-      "industry",
-      "about",
-      "city",
-      "state",
-      "country",
-      "registrationNumber",
-    ];
-    for (const f of required) {
-      if (!p[f] || String(p[f]).trim() === "") {
-        throw new ApiError(400, `Please complete "${f}" before submitting`);
-      }
+    // Validate recruiter identity
+    if (!recruiter.name || recruiter.name.trim() === "") {
+      throw new ApiError(400, "Please add your name on the Settings page first");
+    }
+    if (!recruiter.email && !recruiter.phone) {
+      throw new ApiError(400, "Please add an email or phone number to your profile");
     }
 
-    if (!p.logo?.url) throw new ApiError(400, "Please upload your company logo");
-    if (!p.contactPerson?.name || !p.contactPerson?.designation) {
-      throw new ApiError(400, "Please add contact person details");
+    // Validate company profile completeness
+    const p = recruiter.companyProfile || {};
+    const missingFields = [];
+
+    if (!p.name || p.name.trim() === "") missingFields.push("Company Name");
+    if (!p.industry || p.industry.trim() === "") missingFields.push("Industry");
+    if (!p.about || p.about.trim() === "") missingFields.push("About");
+    if (!p.city || p.city.trim() === "") missingFields.push("City");
+    if (!p.state || p.state.trim() === "") missingFields.push("State");
+    if (!p.country || p.country.trim() === "") missingFields.push("Country");
+    if (!p.registrationNumber || p.registrationNumber.trim() === "") {
+      missingFields.push("Registration Number");
+    }
+    if (!p.logo?.url) missingFields.push("Company Logo");
+    if (!p.contactPerson?.name || p.contactPerson.name.trim() === "") {
+      missingFields.push("Contact Person Name");
+    }
+    if (!p.contactPerson?.designation || p.contactPerson.designation.trim() === "") {
+      missingFields.push("Contact Person Designation");
+    }
+    if (!p.contactEmail || p.contactEmail.trim() === "") missingFields.push("Contact Email");
+    if (!p.contactPhone || p.contactPhone.trim() === "") missingFields.push("Contact Phone");
+
+    if (missingFields.length > 0) {
+      throw new ApiError(
+        400,
+        `Please complete these required fields before submitting: ${missingFields.join(", ")}`
+      );
     }
 
-    const verification = await getOrCreateVerification(recruiter);
+    // Get or create verification and validate documents
+    const verification = await getOrCreateVerification(recruiter._id);
     if (verification.documents.length === 0) {
       throw new ApiError(400, "Please upload at least one verification document");
     }
+
+    const REQUIRED_DOCS = ["company_registration", "gst_certificate", "pan_card"];
+    const uploadedTypes = new Set(verification.documents.map((d) => d.docType));
+    const missingDocs = REQUIRED_DOCS.filter((type) => !uploadedTypes.has(type));
+
+    if (missingDocs.length > 0) {
+      const docLabels = {
+        company_registration: "Company Registration Certificate",
+        gst_certificate: "GST Certificate",
+        pan_card: "PAN Card",
+      };
+      const missingLabels = missingDocs.map((d) => docLabels[d]);
+      throw new ApiError(
+        400,
+        `Please upload all required documents: ${missingLabels.join(", ")}`
+      );
+    }
+
     if (verification.status === "pending") {
       throw new ApiError(400, "Your verification is already under review");
     }
@@ -404,33 +516,21 @@ class CompanyService {
       throw new ApiError(400, "Your company is already verified");
     }
 
+    // Update verification status to pending
     verification.status = "pending";
     verification.submittedAt = new Date();
     verification.rejectionReason = "";
-    verification.companyName = recruiter.companyName;
-    verification.recruiterName = recruiter.name;
-    verification.recruiterEmail = recruiter.email;
-    verification.companySnapshot = {
-      name: p.name,
-      industry: p.industry,
-      website: p.website,
-      city: p.city,
-      state: p.state,
-      country: p.country,
-      registrationNumber: p.registrationNumber,
-      gstNumber: p.gstNumber,
-      panNumber: p.panNumber,
-      logoUrl: p.logo?.url || "",
-    };
+
+    // ✅ CRITICAL: Sync full snapshot on submission
+    await syncVerificationSnapshot(recruiter, verification);
     await verification.save();
 
-    // Sync recruiter status
     recruiter.verificationStatus = "pending";
     recruiter.verificationSubmittedAt = verification.submittedAt;
     recruiter.rejectionReason = "";
     await recruiter.save();
 
-    console.log(`📋 Verification submitted by: ${recruiter.name} (${recruiter.email})`);
+    console.log(`📋 Verification submitted by: ${recruiter.name} (${recruiter.email || recruiter.phone})`);
 
     return {
       verificationStatus: verification.status,
@@ -439,12 +539,11 @@ class CompanyService {
     };
   }
 
-  // DIRECT ADMIN VERIFICATION via JSON API
   async reviewVerification(recruiterId, decision, rejectionReason, reviewer) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
 
-    const verification = await getOrCreateVerification(recruiter);
+    const verification = await getOrCreateVerification(recruiter._id);
 
     if (decision === "approve") {
       verification.status = "approved";
@@ -464,38 +563,32 @@ class CompanyService {
 
     verification.reviewedAt = new Date();
     verification.reviewedBy = reviewer || "Admin Panel";
+
+    await syncVerificationSnapshot(recruiter, verification);
     await verification.save();
 
     recruiter.verificationReviewedAt = verification.reviewedAt;
     recruiter.reviewedBy = verification.reviewedBy;
     await recruiter.save();
 
-    console.log(`✅ [Admin Review] Recruiter ${recruiter.email} marked as ${decision.toUpperCase()}`);
+    console.log(`✅ [Admin Review] Recruiter ${recruiter.email || recruiter.phone} marked as ${decision.toUpperCase()}`);
 
-    return {
-      recruiterId: recruiter._id,
-      companyName: recruiter.companyName,
-      verificationStatus: verification.status,
-      isVerified: recruiter.isVerified,
-      rejectionReason: verification.rejectionReason,
-      reviewedAt: verification.reviewedAt,
-    };
+    return buildVerificationView(recruiter, verification);
   }
 
   async autoApproveDemo(recruiterId) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
 
-    const verification = await getOrCreateVerification(recruiter);
+    const verification = await getOrCreateVerification(recruiter._id);
 
     verification.status = "approved";
     verification.submittedAt = verification.submittedAt || new Date();
     verification.reviewedAt = new Date();
     verification.reviewedBy = "Demo Auto-Approve";
     verification.rejectionReason = "";
-    verification.companyName = recruiter.companyName;
-    verification.recruiterName = recruiter.name;
-    verification.recruiterEmail = recruiter.email;
+
+    await syncVerificationSnapshot(recruiter, verification);
     await verification.save();
 
     recruiter.verificationStatus = "approved";
@@ -512,12 +605,80 @@ class CompanyService {
     };
   }
 
-  // ADMIN: List all pending verifications
+  // ✅ ADMIN: List all verifications with full populated data
   async listAllVerifications(filter = {}) {
     const query = {};
     if (filter.status) query.status = filter.status;
-    const list = await Verification.find(query).sort({ submittedAt: -1 });
-    return list;
+
+    const list = await Verification.find(query)
+      .sort({ submittedAt: -1, createdAt: -1 })
+      .populate({
+        path: "recruiterId",
+        select: "name email phone companyName companyProfile isVerified loginMethod verificationStatus",
+      })
+      .lean();
+
+    return list.map((v) => {
+      const r = v.recruiterId;
+      if (!r || typeof r === "string") {
+        return {
+          _id: v._id,
+          recruiterId: r,
+          recruiterName: v.recruiterName || "",
+          recruiterEmail: v.recruiterEmail || "",
+          recruiterPhone: v.recruiterPhone || "",
+          companyName: v.companyName || "",
+          companySnapshot: v.companySnapshot || {},
+          documents: v.documents,
+          status: v.status,
+          submittedAt: v.submittedAt,
+          reviewedAt: v.reviewedAt,
+          reviewedBy: v.reviewedBy,
+          rejectionReason: v.rejectionReason,
+          adminNotes: v.adminNotes,
+          clarificationDocs: v.clarificationDocs || [],
+          clarificationMessage: v.clarificationMessage || "",
+        };
+      }
+
+      const p = r.companyProfile || {};
+      return {
+        _id: v._id,
+        recruiterId: r._id,
+        recruiterName: r.name || v.recruiterName || "",
+        recruiterEmail: r.email || v.recruiterEmail || "",
+        recruiterPhone: r.phone || v.recruiterPhone || "",
+        companyName: r.companyName || p.name || v.companyName || "",
+        companySnapshot: {
+          name: p.name || v.companySnapshot?.name || "",
+          industry: p.industry || v.companySnapshot?.industry || "",
+          website: p.website || v.companySnapshot?.website || "",
+          about: p.about || v.companySnapshot?.about || "",
+          city: p.city || v.companySnapshot?.city || "",
+          state: p.state || v.companySnapshot?.state || "",
+          country: p.country || v.companySnapshot?.country || "",
+          registrationNumber: p.registrationNumber || v.companySnapshot?.registrationNumber || "",
+          gstNumber: p.gstNumber || v.companySnapshot?.gstNumber || "",
+          panNumber: p.panNumber || v.companySnapshot?.panNumber || "",
+          logoUrl: p.logo?.url || v.companySnapshot?.logoUrl || "",
+          contactEmail: p.contactEmail || v.companySnapshot?.contactEmail || "",
+          contactPhone: p.contactPhone || v.companySnapshot?.contactPhone || "",
+          contactPersonName: p.contactPerson?.name || v.companySnapshot?.contactPersonName || "",
+          contactPersonDesignation: p.contactPerson?.designation || v.companySnapshot?.contactPersonDesignation || "",
+          organizationSize: p.organizationSize || p.teamSize || v.companySnapshot?.organizationSize || "",
+          establishedYear: p.establishedYear || v.companySnapshot?.establishedYear || null,
+        },
+        documents: v.documents,
+        status: v.status,
+        submittedAt: v.submittedAt,
+        reviewedAt: v.reviewedAt,
+        reviewedBy: v.reviewedBy,
+        rejectionReason: v.rejectionReason,
+        adminNotes: v.adminNotes,
+        clarificationDocs: v.clarificationDocs || [],
+        clarificationMessage: v.clarificationMessage || "",
+      };
+    });
   }
 }
 
