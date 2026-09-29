@@ -1,57 +1,19 @@
+const axios = require("axios");
 const nodemailer = require("nodemailer");
 const ApiError = require("../utils/apiError");
 
-// ═══════════════════════════════════════════════════════
-// PRODUCTION-GRADE SMTP TRANSPORTER (Lazy Initialized Singleton)
-// ═══════════════════════════════════════════════════════
-let smtpTransporter = null;
-
-const getSmtpTransporter = () => {
-  if (!smtpTransporter) {
-    const host = process.env.SMTP_HOST;
-    const port = parseInt(process.env.SMTP_PORT, 10);
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
-
-    if (!host || !port || !user || !pass) {
-      throw new ApiError(
-        500,
-        "Email delivery system is misconfigured: Missing required SMTP environment variables (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS)."
-      );
-    }
-
-    smtpTransporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465, // True for 465, false for other ports (587 uses STARTTLS)
-      auth: {
-        user,
-        pass,
-      },
-      tls: {
-        rejectUnauthorized: process.env.NODE_ENV === "production",
-      },
-    });
-  }
-  return smtpTransporter;
-};
-
 class EmailService {
   /**
-   * Dispatches an OTP verification code via the configured SMTP relay.
+   * Dispatches verification OTP email.
+   * Uses Brevo HTTPS API v3 (Port 443) which NEVER times out on Render cloud hosting.
    */
   async sendOtpEmail({ to, otp, userName, purpose = "login" }) {
-    const appName = process.env.APP_NAME || "Verihire";
-    const senderEmail = process.env.EMAIL_FROM;
+    const appName = process.env.APP_NAME || "Smile Jobs";
+    const senderEmail = process.env.EMAIL_FROM || "info.smilejobs@gmail.com";
     const senderName = process.env.EMAIL_FROM_NAME || appName;
     const replyToEmail = process.env.EMAIL_REPLY_TO || senderEmail;
 
-    if (!senderEmail) {
-      throw new ApiError(
-        500,
-        "Email delivery aborted: 'EMAIL_FROM' environment variable is not defined."
-      );
-    }
+    const apiKey = process.env.BREVO_API_KEY || process.env.SMTP_PASS;
 
     const purposeText =
       purpose === "login"
@@ -69,49 +31,105 @@ class EmailService {
 
     const textContent = `${otp} is your ${appName} verification code. This code is valid for 5 minutes. Do not share it with anyone.`;
 
-    try {
-      console.log(`📡 [SMTP Relay] Dispatching verification email to: ${to} from: ${senderEmail}...`);
-      const transporter = getSmtpTransporter();
+    // ═══ METHOD 1: BREVO DIRECT HTTPS REST API (Port 443 - 100% Reliable on Render) ═══
+    if (apiKey) {
+      try {
+        console.log(`📡 [Brevo HTTPS API] Dispatching OTP to: ${to} from: ${senderEmail}...`);
 
-      const mailOptions = {
+        const response = await axios.post(
+          "https://api.brevo.com/v3/smtp/email",
+          {
+            sender: {
+              name: senderName,
+              email: senderEmail,
+            },
+            to: [
+              {
+                email: to.trim().toLowerCase(),
+                name: userName || to.split("@")[0],
+              },
+            ],
+            replyTo: {
+              email: replyToEmail,
+              name: senderName,
+            },
+            subject: `${otp} is your ${appName} verification code`,
+            htmlContent: htmlContent,
+            textContent: textContent,
+            tags: ["otp-verification", "auth"],
+          },
+          {
+            headers: {
+              accept: "application/json",
+              "api-key": apiKey.trim(),
+              "content-type": "application/json",
+            },
+            timeout: 10000,
+          }
+        );
+
+        console.log(`✅ [Brevo API Delivered] Message ID: ${response.data?.messageId}`);
+        return { success: true, messageId: response.data?.messageId };
+      } catch (apiErr) {
+        const errDetails = apiErr.response?.data;
+        console.error("❌ [Brevo API Error]:", {
+          status: apiErr.response?.status,
+          message: errDetails?.message || apiErr.message,
+        });
+
+        // If it's a sender authentication issue, log clear instructions
+        if (errDetails?.message && errDetails.message.includes("sender")) {
+          console.error(
+            `\n⚠️ SENDER EMAIL ISSUE: "${senderEmail}" is not verified in Brevo.` +
+            `\n👉 Go to https://app.brevo.com/senders to verify this email address.\n`
+          );
+        }
+      }
+    }
+
+    // ═══ METHOD 2: SMTP FALLBACK (If API Key is missing or failed) ═══
+    try {
+      console.log(`📡 [SMTP Fallback] Attempting send via nodemailer...`);
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
+        port: parseInt(process.env.SMTP_PORT || "587", 10),
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+        connectionTimeout: 8000, // 8s timeout to avoid hanging
+      });
+
+      const info = await transporter.sendMail({
         from: `"${senderName}" <${senderEmail}>`,
         to: to.trim().toLowerCase(),
         replyTo: replyToEmail,
         subject: `${otp} is your ${appName} verification code`,
         text: textContent,
         html: htmlContent,
-        headers: {
-          "X-Priority": "1", // High Priority
-          "X-MSMail-Priority": "High",
-          Importance: "high",
-        },
-      };
+      });
 
-      const info = await transporter.sendMail(mailOptions);
       console.log(`✅ [SMTP Delivered] Message ID: ${info.messageId}`);
       return { success: true, messageId: info.messageId };
-    } catch (error) {
-      console.error("❌ [SMTP Delivery Failure]:", error.message);
+    } catch (smtpErr) {
+      console.error("❌ [SMTP Delivery Error]:", smtpErr.message);
       throw new ApiError(
         500,
-        `Email verification delivery failed. Error: ${error.message}`
+        `Email delivery failed: ${smtpErr.message}. Please check your Brevo credentials.`
       );
     }
   }
 
   /**
-   * Welcome Email for newly registered recruiters
+   * Welcome email for newly registered recruiters
    */
   async sendWelcomeEmail({ to, userName }) {
-    const appName = process.env.APP_NAME || "Verihire";
-    const senderEmail = process.env.EMAIL_FROM;
+    const appName = process.env.APP_NAME || "Smile Jobs";
+    const senderEmail = process.env.EMAIL_FROM || "info.smilejobs@gmail.com";
     const senderName = process.env.EMAIL_FROM_NAME || appName;
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-
-    if (!senderEmail) {
-      console.warn("⚠️ Welcome email skipped: 'EMAIL_FROM' environment variable is missing.");
-      return { success: false };
-    }
+    const frontendUrl = process.env.FRONTEND_URL || "https://smile-jobs-recuiter-website.vercel.app";
+    const apiKey = process.env.BREVO_API_KEY || process.env.SMTP_PASS;
 
     const html = `
       <!DOCTYPE html>
@@ -123,7 +141,7 @@ class EmailService {
             <td style="text-align:center;">
               <h1 style="color:#2C1B57; margin-bottom:10px;">Welcome to ${appName}! 🎉</h1>
               <p style="color:#49454F; font-size:15px; line-height:1.6;">
-                Hello <strong>${userName || "Recruiter"}</strong>, your recruiter account is now active on our portal.
+                Hello <strong>${userName || "Recruiter"}</strong>, your recruiter account is now active.
               </p>
               <div style="margin:25px 0;">
                 <a href="${frontendUrl}" style="background:#42326E; color:#fff; padding:12px 28px; text-decoration:none; font-weight:bold; border-radius:8px; display:inline-block;">
@@ -141,13 +159,25 @@ class EmailService {
     `;
 
     try {
-      const transporter = getSmtpTransporter();
-      await transporter.sendMail({
-        from: `"${senderName}" <${senderEmail}>`,
-        to: to.trim().toLowerCase(),
-        subject: `Welcome to ${appName}! 🎉`,
-        html,
-      });
+      if (apiKey) {
+        await axios.post(
+          "https://api.brevo.com/v3/smtp/email",
+          {
+            sender: { name: senderName, email: senderEmail },
+            to: [{ email: to.trim().toLowerCase(), name: userName || to.split("@")[0] }],
+            subject: `Welcome to ${appName}! 🎉`,
+            htmlContent: html,
+          },
+          {
+            headers: {
+              accept: "application/json",
+              "api-key": apiKey.trim(),
+              "content-type": "application/json",
+            },
+            timeout: 8000,
+          }
+        );
+      }
       return { success: true };
     } catch (e) {
       console.warn("⚠️ Welcome email skipped:", e.message);
@@ -156,7 +186,7 @@ class EmailService {
   }
 
   _buildOtpHtml({ otp, userName, appName, purposeText }) {
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const frontendUrl = process.env.FRONTEND_URL || "https://smile-jobs-recuiter-website.vercel.app";
 
     return `
       <!DOCTYPE html>
@@ -202,7 +232,7 @@ class EmailService {
                       <span style="display:block; color:#6F687A; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:2px; margin-bottom:6px;">
                         One-Time Passcode
                       </span>
-                      <span style="display:inline-block; color:#2C1B57; font-size:36px; font-weight:900; letter-spacing:8px; font-family:'Courier New', monospace;">
+                      <span style="display:inline-block; color:#2C1B57; font-size:38px; font-weight:900; letter-spacing:8px; font-family:'Courier New', monospace;">
                         ${otp}
                       </span>
                     </div>
