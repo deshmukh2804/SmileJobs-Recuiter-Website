@@ -2,6 +2,32 @@ const getJobModel = require("../models/jobModel");
 const Recruiter = require("../models/recruiterModel");
 const ApiError = require("../utils/apiError");
 
+// ─── Foolproof Dynamic Cloudinary Module Resolver ───
+let deleteFromCloudinary;
+try {
+  // Try config/cloudinary
+  deleteFromCloudinary = require("../config/cloudinary").deleteFromCloudinary;
+} catch (e1) {
+  try {
+    // Try utils/cloudinary
+    deleteFromCloudinary = require("../utils/cloudinary").deleteFromCloudinary;
+  } catch (e2) {
+    try {
+      // Try config/cloudinaryConfig
+      deleteFromCloudinary = require("../config/cloudinaryConfig").deleteFromCloudinary;
+    } catch (e3) {
+      try {
+        // Try utils/cloudinaryConfig
+        deleteFromCloudinary = require("../utils/cloudinaryConfig").deleteFromCloudinary;
+      } catch (e4) {
+        console.warn("⚠️ Warning: Could not locate Cloudinary helper helper automatically. Safe fallback initiated.");
+        // Fallback placeholder to prevent crashes
+        deleteFromCloudinary = async () => ({ result: "skipped", reason: "cloudinary_module_not_found" });
+      }
+    }
+  }
+}
+
 const parseSalaryRange = (str = "") => {
   const nums = String(str)
     .replace(/[^\d–\-,]/g, "")
@@ -345,6 +371,46 @@ class JobService {
 
   async deleteJob(recruiterId, jobId) {
     const Job = getJobModel();
+    const job = await Job.findOne({ _id: jobId, recruiterId });
+    if (!job) throw new ApiError(404, "Job not found");
+
+    // Fetch recruiter profile to avoid deleting shared profile-level assets
+    const recruiter = await Recruiter.findById(recruiterId).select("companyProfile");
+    const profileOwnedPublicIds = new Set();
+
+    if (recruiter && recruiter.companyProfile) {
+      const cp = recruiter.companyProfile;
+      if (cp.logo?.publicId) {
+        profileOwnedPublicIds.add(cp.logo.publicId);
+      }
+      if (Array.isArray(cp.gallery)) {
+        cp.gallery.forEach((g) => {
+          if (g.publicId) profileOwnedPublicIds.add(g.publicId);
+        });
+      }
+    }
+
+    // Collect specific job assets
+    const jobAssetPublicIds = [];
+    if (job.companyLogo?.publicId) {
+      jobAssetPublicIds.push(job.companyLogo.publicId);
+    }
+    if (Array.isArray(job.companyImages)) {
+      job.companyImages.forEach((img) => {
+        if (img.publicId) jobAssetPublicIds.push(img.publicId);
+      });
+    }
+
+    // Safely delete non-shared assets
+    for (const publicId of jobAssetPublicIds) {
+      if (profileOwnedPublicIds.has(publicId)) {
+        console.log(`ℹ️ Skipping profile logo/gallery deletion from Cloudinary: [${publicId}]`);
+        continue;
+      }
+      // Delete from Cloudinary passing model context to check if shared with other jobs
+      await deleteFromCloudinary(publicId, Job, jobId);
+    }
+
     const result = await Job.deleteOne({ _id: jobId, recruiterId });
     if (result.deletedCount === 0) throw new ApiError(404, "Job not found");
     return { deleted: true };

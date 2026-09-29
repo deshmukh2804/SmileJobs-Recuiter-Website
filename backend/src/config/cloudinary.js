@@ -32,36 +32,32 @@ const uploadToCloudinary = async (filePath, folder = "uploads") => {
 };
 
 // ─── Helper: Extract public_id from a full Cloudinary URL ───
-// e.g. "https://res.cloudinary.com/xxx/image/upload/v123/jobs/company/gallery/abc.jpg"
-//   => "jobs/company/gallery/abc"
 const extractPublicIdFromUrl = (urlOrId) => {
   if (!urlOrId || typeof urlOrId !== "string") return null;
 
-  // If it's already a public_id (no http), return as-is
+  // If it's already a public_id (no http prefix), return as-is
   if (!urlOrId.startsWith("http")) return urlOrId;
 
   try {
-    const afterUpload = urlOrId.split("/upload/")[1];
-    if (!afterUpload) return null;
+    const parts = urlOrId.split("/upload/");
+    if (parts.length < 2) return null;
 
-    const segments = afterUpload.split("/");
-    // Skip the version segment like "v1698765432"
-    const startIdx =
-      segments[0].startsWith("v") && /^\d+$/.test(segments[0].slice(1)) ? 1 : 0;
+    // Remove any dynamic version segments (e.g. "v1790660232/")
+    const cleanPath = parts[1].replace(/^v\d+\//, "");
 
-    const pathParts = segments.slice(startIdx);
-    const fullPath = pathParts.join("/");
-
-    // Remove file extension
-    const lastDot = fullPath.lastIndexOf(".");
-    return lastDot > 0 ? fullPath.substring(0, lastDot) : fullPath;
-  } catch {
+    // Strip out the file extension
+    const lastDotIndex = cleanPath.lastIndexOf(".");
+    if (lastDotIndex !== -1) {
+      return cleanPath.substring(0, lastDotIndex);
+    }
+    return cleanPath;
+  } catch (error) {
     return null;
   }
 };
 
-// Delete file from Cloudinary (FIXED: handles undefined, null, and full URLs)
-const deleteFromCloudinary = async (publicIdOrUrl) => {
+// Delete file from Cloudinary (SAFE-GUARDED: prevents deleting shared logos or throwing on missing assets)
+const deleteFromCloudinary = async (publicIdOrUrl, JobModel = null, currentJobId = null) => {
   const publicId = extractPublicIdFromUrl(publicIdOrUrl);
 
   if (!publicId) {
@@ -72,12 +68,41 @@ const deleteFromCloudinary = async (publicIdOrUrl) => {
   }
 
   try {
+    // If JobModel is passed, check if any other job is still using this asset
+    if (JobModel) {
+      const query = {
+        $or: [
+          { "companyLogo.publicId": publicId },
+          { "companyImages.publicId": publicId },
+        ],
+      };
+
+      if (currentJobId) {
+        query._id = { $ne: currentJobId };
+      }
+
+      const stillUsedCount = await JobModel.countDocuments(query);
+
+      if (stillUsedCount > 0) {
+        console.log(`ℹ️ Asset [${publicId}] is shared by other jobs. Skipping physical deletion.`);
+        return { result: "skipped", reason: "shared_asset_in_use" };
+      }
+    }
+
     const result = await cloudinary.uploader.destroy(publicId, {
       invalidate: true,
     });
+
+    // Handle Cloudinary 404 responses gracefully instead of causing API errors
+    if (result && result.result === "not found") {
+      console.log(`ℹ️ Asset [${publicId}] is not present on Cloudinary server (already deleted). Skipping.`);
+      return { result: "skipped", reason: "not_found" };
+    }
+
+    console.log(`✅ Asset [${publicId}] successfully deleted from Cloudinary.`);
     return result;
   } catch (error) {
-    // Log but do NOT throw — prevents blocking DB delete operations
+    // Log error but do NOT throw — prevents blocking database deletions
     console.error(
       `❌ Cloudinary Delete Error for [${publicId}]:`,
       error.message
@@ -90,5 +115,6 @@ module.exports = {
   connectCloudinary,
   uploadToCloudinary,
   deleteFromCloudinary,
+  extractPublicIdFromUrl,
   cloudinary,
 };

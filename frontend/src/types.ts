@@ -313,3 +313,113 @@ export interface RazorpayCheckoutInit {
   planName?: string;
   planTier?: string;
 }
+
+// ═══ CANDIDATE FULL DETAIL TYPES ═══
+
+export type CandidateStatus =
+  | 'Applied'
+  | 'Viewed'
+  | 'Shortlisted'
+  | 'Interview'
+  | 'Offered'
+  | 'Hired'
+  | 'Rejected'
+  | 'Withdrawn';
+
+export interface CandidateEducation {
+  collegeName: string;
+  degree: string;
+  specialization: string;
+  endYear: string;
+}
+
+export interface CandidateMilestone {
+  title: string;
+  time?: string;
+  completed: boolean;
+  statusText: string;
+  isHighlight: boolean;
+}
+
+export interface CandidateWorkflow {
+  currentStatus: string;
+  allowedNextStatuses: string[];
+  currentStepIndex: number;
+  totalSteps: number;
+  isTerminal: boolean;
+}
+
+export interface CandidateJobDetails {
+  id: string;
+  title: string;
+  companyName: string;
+  companyLogo: string;
+  companyWebsite: string;
+  location: { city?: string; state?: string; country?: string; address?: string };
+  workMode: string;
+  jobType: string;
+  contactPerson: { name?: string; designation?: string };
+}
+
+export interface CandidateFullDetails {
+  _id: string;
+  id: string;
+  jobId: string;
+  userId: string;
+
+  candidateName: string;
+  candidatePhone: string;
+  candidateEmail: string;
+  candidateCity: string;
+  candidateSubLocation: string;
+  candidateAvatarUrl: string;
+  avatarBg: string;
+
+  resumeUrl: string;
+  resumeFileName: string;
+
+  candidateSkills: string[];
+  candidateLanguages: string[];
+  candidateEnglishLevel: string;
+
+  candidateExperience: string;
+  candidateExperienceLevel: string;
+  candidateJobTitle: string;
+  candidateCurrentCompany: string;
+  candidateCurrentSalary: string;
+
+  candidateEducation: CandidateEducation;
+  candidateAssets: string[];
+  candidateCertifications: string[];
+
+  jobTitle: string;
+  jobCompany: string;
+  jobCompanyLogo: string;
+  jobSalary: string;
+  jobLocation: string;
+  jobHrName: string;
+  jobHrRole: string;
+  jobHrPhone: string;
+  jobHrWhatsapp: string;
+
+  matchPercentage: number;
+  coverNote: string;
+  status: CandidateStatus;
+  stage: string;
+  category: string;
+  bookmarked: boolean;
+
+  hrNotes: string;
+  recruiterNotes: string[];
+  milestones: CandidateMilestone[];
+
+  appliedAt: string;
+  viewedAt: string | null;
+  shortlistedAt: string | null;
+  interviewAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+
+  jobDetails?: CandidateJobDetails;
+  workflow?: CandidateWorkflow;
+}

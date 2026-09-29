@@ -1,18 +1,37 @@
-import React, { useState } from 'react';
-import { Candidate, AppRoute } from '../types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Candidate, CandidateFullDetails } from '../types';
+import { candidateService } from '../services/candidateService';
 import {
   Search,
   ShieldCheck,
   Bookmark,
   CheckCircle2,
-  Clock,
   MapPin,
-  Briefcase,
+  Phone,
+  X,
+  Loader2,
+  Download,
+  Eye,
+  ExternalLink,
+  FileText,
+  Send,
+  UserCheck,
   Star,
-  MessageSquare,
-  Sparkles,
+  Calendar,
+  Award,
+  Briefcase,
+  GraduationCap,
+  Copy,
+  Trash2,
   ArrowRight,
-  Filter,
+  Clock,
+  AlertCircle,
+  ChevronDown,
+  Users,
+  Languages,
+  Package,
+  Sparkles,
+  MessageSquare,
 } from 'lucide-react';
 
 interface CandidatesViewProps {
@@ -23,79 +42,227 @@ interface CandidatesViewProps {
   onOpenMessage: (candidate: Candidate) => void;
 }
 
+// ═══════════════════════════════════════════════════════
+// WORKFLOW CONFIGURATION
+// ═══════════════════════════════════════════════════════
+const WORKFLOW_STAGES = [
+  { key: 'Applied', short: 'Apply', icon: Send },
+  { key: 'Viewed', short: 'View', icon: Eye },
+  { key: 'Shortlisted', short: 'Short', icon: Star },
+  { key: 'Interview', short: 'Intv', icon: Calendar },
+  { key: 'Offered', short: 'Offer', icon: Award },
+  { key: 'Hired', short: 'Hired', icon: UserCheck },
+];
+
+const TERMINAL_STAGES = ['Hired', 'Rejected', 'Withdrawn'];
+
+const STATUS_COLOR_MAP: Record<string, string> = {
+  Applied: 'bg-blue-50 text-blue-700 border-blue-200',
+  Viewed: 'bg-[#EDE6FA] text-[#42326E] border-[#D7C8ED]',
+  Shortlisted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Interview: 'bg-amber-50 text-amber-700 border-amber-200',
+  Offered: 'bg-teal-50 text-teal-700 border-teal-200',
+  Hired: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  Rejected: 'bg-rose-50 text-rose-700 border-rose-200',
+  Withdrawn: 'bg-gray-50 text-gray-600 border-gray-200',
+};
+
+const shortId = (id?: string) => (id ? id.slice(-8).toUpperCase() : '—');
+
 export const CandidatesView: React.FC<CandidatesViewProps> = ({
   candidates,
-  onSelectCandidate,
   onBookmarkToggle,
-  onShortlistCandidate,
-  onOpenMessage,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('match');
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(9);
 
+  // Detail Panel State
+  const [selectedApp, setSelectedApp] = useState<CandidateFullDetails | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ status: string; label: string } | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  // Bulk Selection
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBulkMenu, setShowBulkMenu] = useState(false);
+
+  // Toast
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Mobile detail view toggle
+  const [showMobileDetail, setShowMobileDetail] = useState(false);
+
+  // Avatar error tracking
+  const [avatarErrors, setAvatarErrors] = useState<Set<string>>(new Set());
+
+  const handleAvatarError = (id: string) => {
+    setAvatarErrors((prev) => new Set(prev).add(id));
+  };
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // ═══════════════════════════════════════════════════════
+  // FILTERS
+  // ═══════════════════════════════════════════════════════
   const filters = [
-    { id: 'all', label: 'All candidates' },
-    { id: 'verified', label: 'Verified only' },
-    { id: 'shortlisted', label: 'Shortlisted' },
-    { id: 'design', label: 'Design' },
-    { id: 'engineering', label: 'Engineering' },
-    { id: 'remote', label: 'Remote only' },
+    { id: 'all', label: 'All' },
+    { id: 'Applied', label: 'Applied' },
+    { id: 'Viewed', label: 'Viewed' },
+    { id: 'Shortlisted', label: 'Shortlisted' },
+    { id: 'Interview', label: 'Interview' },
+    { id: 'Offered', label: 'Offered' },
+    { id: 'Hired', label: 'Hired' },
+    { id: 'Rejected', label: 'Rejected' },
+    { id: 'bookmarked', label: '⭐ Bookmarked' },
   ];
 
-  const getFilteredCandidates = () => {
+  const filteredCandidates = useMemo(() => {
     let result = candidates.filter((c) => {
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         c.name.toLowerCase().includes(q) ||
         c.role.toLowerCase().includes(q) ||
         c.location.toLowerCase().includes(q) ||
-        c.skills.some((s) => s.toLowerCase().includes(q));
+        c.skills.some((s) => s.toLowerCase().includes(q)) ||
+        (c.email || '').toLowerCase().includes(q);
 
       if (!matchesSearch) return false;
 
-      if (selectedFilter === 'verified') {
-        return c.verified.identity && c.verified.experience;
-      }
-      if (selectedFilter === 'shortlisted') {
-        return c.stage === 'Shortlisted' || c.bookmarked;
-      }
-      if (selectedFilter === 'design') {
-        return c.department === 'Design';
-      }
-      if (selectedFilter === 'engineering') {
-        return c.department === 'Engineering' || c.department === 'Infrastructure';
-      }
-      if (selectedFilter === 'remote') {
-        return c.location.toLowerCase().includes('remote');
-      }
-
-      return true;
+      if (selectedFilter === 'all') return true;
+      if (selectedFilter === 'bookmarked') return c.bookmarked;
+      return (c as any).status === selectedFilter || c.stage === selectedFilter;
     });
 
-    // Sort
     result.sort((a, b) => {
       if (sortBy === 'match') return b.matchScore - a.matchScore;
       if (sortBy === 'experience') return b.experienceYears - a.experienceYears;
       if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'recent')
+        return new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime();
       return 0;
     });
 
     return result;
+  }, [candidates, searchQuery, selectedFilter, sortBy]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: candidates.length, bookmarked: 0 };
+    candidates.forEach((c) => {
+      const status = (c as any).status || c.stage;
+      counts[status] = (counts[status] || 0) + 1;
+      if (c.bookmarked) counts.bookmarked = (counts.bookmarked || 0) + 1;
+    });
+    return counts;
+  }, [candidates]);
+
+  // ═══════════════════════════════════════════════════════
+  // HANDLERS
+  // ═══════════════════════════════════════════════════════
+  const handleSelectCandidate = async (candidate: Candidate) => {
+    setLoadingDetails(true);
+    setShowMobileDetail(true);
+    try {
+      const details = await candidateService.getFullDetails(candidate.id);
+      setSelectedApp(details);
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Failed to load details', 'error');
+    } finally {
+      setLoadingDetails(false);
+    }
   };
 
-  const filteredCandidates = getFilteredCandidates();
-  const topCandidate = filteredCandidates[0];
-
-  const handleLoadMore = () => {
-    setIsLoadingMore(true);
-    setTimeout(() => {
-      setVisibleCount((prev) => prev + 3);
-      setIsLoadingMore(false);
-    }, 600);
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    setUpdatingStatus(true);
+    try {
+      const updated = await candidateService.updateStatus(id, newStatus);
+      if (updated) {
+        showToast(`✓ Moved to ${newStatus}`, 'success');
+        setSelectedApp(updated);
+      }
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Failed to update status', 'error');
+    } finally {
+      setUpdatingStatus(false);
+      setConfirmAction(null);
+    }
   };
+
+  const handleBookmark = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      onBookmarkToggle(id);
+      await candidateService.toggleBookmark(id);
+    } catch (err) {
+      showToast('Failed to toggle bookmark', 'error');
+    }
+  };
+
+  const handleBulkStatusChange = async (status: string) => {
+    if (selectedIds.length === 0) return;
+    try {
+      await candidateService.bulkUpdateStatus(selectedIds, status);
+      showToast(`${selectedIds.length} candidates moved to ${status}`, 'success');
+      setSelectedIds([]);
+      setShowBulkMenu(false);
+      window.location.reload();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Bulk update failed', 'error');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this application permanently?')) return;
+    try {
+      await candidateService.deleteApplication(id);
+      showToast('Application deleted', 'success');
+      setSelectedApp(null);
+      setShowMobileDetail(false);
+      window.location.reload();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Delete failed', 'error');
+    }
+  };
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredCandidates.length) setSelectedIds([]);
+    else setSelectedIds(filteredCandidates.map((c) => c.id));
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => showToast(`${label} copied`, 'info'));
+  };
+
+  const forceDownloadResume = (url: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'resume.pdf';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const matchColor = (pct: number) => {
+    if (pct >= 80) return 'text-emerald-600';
+    if (pct >= 50) return 'text-amber-600';
+    return 'text-rose-500';
+  };
+
+  const currentStageIndex = useMemo(() => {
+    if (!selectedApp) return -1;
+    return WORKFLOW_STAGES.findIndex((s) => s.key === selectedApp.status);
+  }, [selectedApp]);
+
+  const isTerminalStatus = selectedApp && TERMINAL_STAGES.includes(selectedApp.status);
 
   const getInitials = (name: string) =>
     name
@@ -106,360 +273,904 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
       .toUpperCase();
 
   return (
-    <div className="p-6 md:p-8 max-w-[1400px] mx-auto space-y-8 animate-in fade-in duration-200">
-      {/* Search Header Banner */}
-      <div className="bg-[#2C1B57] text-white rounded-3xl p-8 md:p-10 relative overflow-hidden shadow-xl space-y-4">
-        <div className="relative z-10 max-w-xl">
-          <span className="text-xs font-bold uppercase tracking-wider text-[#B29CFE] block mb-1">
-            Talent Discovery Engine
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Find your next great hire
+    <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-4 animate-in fade-in duration-200">
+      {/* HEADER */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#2C1B57] flex items-center gap-2">
+            <Users className="w-6 h-6 text-[#B29CFE]" />
+            Candidates
+            <span className="text-xs font-normal text-[#6F687A]">({candidates.length})</span>
           </h1>
-          <p className="text-sm text-white/70 mt-1">
-            Every candidate is pre-authenticated with government identity, verified degree, and tenure audits.
+          <p className="text-xs text-[#6F687A] mt-0.5">
+            Manage applications, view resumes, and track hiring pipeline
           </p>
         </div>
-
-        {/* Big Search Input */}
-        <div className="relative z-10 flex flex-col sm:flex-row gap-2 bg-white p-2 rounded-2xl shadow-lg max-w-2xl">
-          <div className="relative flex-1 flex items-center">
-            <Search className="w-5 h-5 text-[#6F687A] ml-3" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by candidate name, skill, title, or city..."
-              className="w-full py-2.5 px-3 text-sm text-[#29233A] focus:outline-hidden placeholder:text-[#6F687A]"
-            />
-          </div>
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="text-xs text-[#6F687A] hover:text-[#2C1B57] px-2 self-center font-bold"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-
-        {/* Ambient background blur */}
-        <div className="absolute right-0 bottom-0 w-96 h-96 bg-radial from-[#B29CFE]/25 to-transparent blur-3xl pointer-events-none" />
       </div>
 
-      {/* Filter and Sort Toolbar */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        {/* Filter chips */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
-          {filters.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setSelectedFilter(f.id)}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all shrink-0 ${
-                selectedFilter === f.id
-                  ? 'bg-[#2C1B57] text-white border-[#2C1B57] shadow-xs'
-                  : 'bg-white text-[#49454F] border-[#E8E3EF] hover:border-[#B29CFE]'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Count & Sort */}
-        <div className="flex items-center justify-between w-full md:w-auto gap-4 text-xs text-[#6F687A]">
-          <span className="font-semibold whitespace-nowrap">
-            <strong className="text-[#2C1B57]">{filteredCandidates.length}</strong> verified candidates match
-          </span>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <label className="font-bold text-[#49454F]">Sort by:</label>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="bg-white border border-[#E8E3EF] rounded-lg px-2.5 py-1 text-xs text-[#2C1B57] font-semibold focus:outline-hidden focus:border-[#42326E]"
-            >
-              <option value="match">Match Score (High to Low)</option>
-              <option value="experience">Experience (High to Low)</option>
-              <option value="name">Candidate Name (A-Z)</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Top Match Spotlight (if available and not heavily filtered away) */}
-      {topCandidate && (
-        <div className="bg-white rounded-3xl p-6 md:p-8 border-2 border-[#B29CFE] shadow-sm relative overflow-hidden">
-          <span className="absolute top-0 right-8 bg-[#B29CFE] text-[#2C1B57] text-[11px] font-extrabold px-4 py-1 rounded-b-xl tracking-wider uppercase">
-            Top Match Recommendation
-          </span>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-            {/* Left Avatar & Basic info */}
-            <div className="lg:col-span-8 flex flex-col sm:flex-row items-start sm:items-center gap-5">
-              <div
-                className="w-18 h-18 rounded-2xl flex items-center justify-center text-white font-extrabold text-2xl shadow-md shrink-0"
-                style={{ backgroundColor: topCandidate.avatarBg }}
-              >
-                {getInitials(topCandidate.name)}
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3
-                    onClick={() => onSelectCandidate(topCandidate)}
-                    className="text-xl font-extrabold text-[#2C1B57] hover:text-[#42326E] cursor-pointer"
-                  >
-                    {topCandidate.name}
-                  </h3>
-                  <span className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    Audit Cleared
-                  </span>
-                </div>
-
-                <p className="text-xs text-[#6F687A]">
-                  {topCandidate.role} • {topCandidate.location} • {topCandidate.experienceYears} yrs experience • Currently at {topCandidate.currentCompany}
-                </p>
-
-                {/* Verification badges */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[11px] font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ID Verified
-                  </span>
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[11px] font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone OTP
-                  </span>
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[11px] font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Work History
-                  </span>
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[11px] font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Degree Match
-                  </span>
-                </div>
-
-                {/* Skills */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {topCandidate.skills.map((s) => (
-                    <span
-                      key={s}
-                      className="px-2 py-0.5 bg-[#F7F4FA] border border-[#E8E3EF] text-[#2C1B57] rounded-md text-xs font-semibold"
-                    >
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Right Action & Match Score */}
-            <div className="lg:col-span-4 flex flex-col justify-between p-4 bg-[#FCFCF7] rounded-2xl border border-[#E8E3EF] space-y-4">
-              <div>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="font-bold text-[#2C1B57]">Overall Role Match</span>
-                  <span className="font-extrabold text-base text-[#42326E]">
-                    {topCandidate.matchScore}%
-                  </span>
-                </div>
-                <div className="w-full bg-[#E8E3EF] h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-gradient-to-r from-[#6E5B9A] to-[#42326E] h-full rounded-full transition-all duration-700"
-                    style={{ width: `${topCandidate.matchScore}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => onOpenMessage(topCandidate)}
-                  className="flex-1 py-2 px-3 bg-[#42326E] hover:bg-[#322554] text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Contact
-                </button>
-                <button
-                  onClick={() => onShortlistCandidate(topCandidate)}
-                  className="flex-1 py-2 px-3 bg-white border border-[#E8E3EF] hover:border-[#D7C8ED] text-[#2C1B57] text-xs font-bold rounded-xl shadow-xs transition-all"
-                >
-                  {topCandidate.stage === 'Shortlisted' ? 'Shortlisted ✓' : 'Shortlist'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Candidate Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredCandidates.slice(0, visibleCount).map((cand) => (
-          <div
-            key={cand.id}
-            onClick={() => onSelectCandidate(cand)}
-            className="bg-white p-6 rounded-3xl border border-[#E8E3EF] shadow-xs hover:shadow-lg hover:border-[#B29CFE] transition-all cursor-pointer flex flex-col justify-between group"
+      {/* FILTER CHIPS */}
+      <div className="flex flex-wrap gap-1.5">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setSelectedFilter(f.id)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+              selectedFilter === f.id
+                ? 'bg-[#2C1B57] text-white border-[#2C1B57] shadow-xs'
+                : 'bg-white text-[#49454F] border-[#E8E3EF] hover:border-[#B29CFE]'
+            }`}
           >
-            <div>
-              {/* Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-xs shrink-0"
-                    style={{ backgroundColor: cand.avatarBg }}
-                  >
-                    {getInitials(cand.name)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-extrabold text-sm text-[#2C1B57] group-hover:text-[#42326E] transition-colors truncate flex items-center gap-1">
-                      {cand.name}
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    </div>
-                    <div className="text-xs text-[#6F687A] truncate">{cand.role}</div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onBookmarkToggle(cand.id);
-                  }}
-                  className={`p-1.5 rounded-lg border transition-colors ${
-                    cand.bookmarked
-                      ? 'bg-[#EDE6FA] border-[#B29CFE] text-[#42326E]'
-                      : 'bg-white border-[#E8E3EF] text-[#6F687A] hover:text-[#2C1B57]'
-                  }`}
-                  aria-label="Bookmark candidate"
-                >
-                  <Bookmark
-                    className={`w-3.5 h-3.5 ${cand.bookmarked ? 'fill-current' : ''}`}
-                  />
-                </button>
-              </div>
-
-              {/* Verified checklist tags */}
-              <div className="flex flex-wrap gap-1 mb-3 text-[10px]">
-                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded font-semibold flex items-center gap-0.5">
-                  <CheckCircle2 className="w-2.5 h-2.5" /> ID
-                </span>
-                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded font-semibold flex items-center gap-0.5">
-                  <CheckCircle2 className="w-2.5 h-2.5" /> Phone
-                </span>
-                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded font-semibold flex items-center gap-0.5">
-                  <CheckCircle2 className="w-2.5 h-2.5" /> Work
-                </span>
-                {cand.verified.education && (
-                  <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded font-semibold flex items-center gap-0.5">
-                    <CheckCircle2 className="w-2.5 h-2.5" /> Degree
-                  </span>
-                )}
-              </div>
-
-              {/* Bio */}
-              <p className="text-xs text-[#49454F] line-clamp-2 mb-4 leading-relaxed">
-                {cand.bio}
-              </p>
-
-              {/* Skills */}
-              <div className="flex flex-wrap gap-1 mb-4">
-                {cand.skills.slice(0, 3).map((s) => (
-                  <span
-                    key={s}
-                    className="text-[11px] font-semibold px-2 py-0.5 bg-[#FCFCF7] border border-[#E8E3EF] rounded text-[#49454F]"
-                  >
-                    {s}
-                  </span>
-                ))}
-                {cand.skills.length > 3 && (
-                  <span className="text-[11px] font-semibold text-[#6F687A] px-1 py-0.5">
-                    +{cand.skills.length - 3}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Card Footer */}
-            <div className="pt-3 border-t border-[#EFEAF6] space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-[#6F687A] flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {cand.location}
-                </span>
-                <span className="font-bold text-[#C58A3A]">
-                  {cand.salaryExpected} exp.
-                </span>
-              </div>
-
-              {/* Match bar */}
-              <div>
-                <div className="flex items-center justify-between text-[11px] text-[#6F687A] mb-1">
-                  <span>Match rating</span>
-                  <span className="font-bold text-[#2C1B57]">{cand.matchScore}%</span>
-                </div>
-                <div className="w-full bg-[#EFEAF6] h-1.5 rounded-full overflow-hidden">
-                  <div
-                    className="bg-[#42326E] h-full rounded-full"
-                    style={{ width: `${cand.matchScore}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Card Actions */}
-              <div className="flex items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
-                <button
-                  onClick={() => onShortlistCandidate(cand)}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all ${
-                    cand.stage === 'Shortlisted'
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                      : 'bg-[#FCFCF7] border-[#E8E3EF] hover:border-[#D7C8ED] text-[#2C1B57]'
-                  }`}
-                >
-                  {cand.stage === 'Shortlisted' ? 'Shortlisted ✓' : 'Shortlist'}
-                </button>
-                <button
-                  onClick={() => onOpenMessage(cand)}
-                  className="flex-1 py-1.5 text-xs font-bold rounded-lg bg-[#42326E] hover:bg-[#322554] text-white transition-all text-center"
-                >
-                  Contact
-                </button>
-              </div>
-            </div>
-          </div>
+            {f.label} <span className="opacity-70 ml-0.5">({statusCounts[f.id] || 0})</span>
+          </button>
         ))}
       </div>
 
-      {/* Skeleton Loading State during load more */}
-      {isLoadingMore && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="bg-white p-6 rounded-3xl border border-[#E8E3EF] space-y-4"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl skeleton-shimmer" />
-                <div className="space-y-1.5 flex-1">
-                  <div className="h-3.5 w-3/4 skeleton-shimmer rounded" />
-                  <div className="h-2.5 w-1/2 skeleton-shimmer rounded" />
+      {/* SEARCH & BULK */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[220px] max-w-2xl">
+          <Search className="w-4 h-4 text-[#6F687A] absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name, email, skills, or job title..."
+            className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#E8E3EF] bg-white text-xs focus:outline-none focus:border-[#42326E] focus:ring-2 focus:ring-[#EDE6FA]"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-[11px] font-bold text-[#49454F]">Sort:</label>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-white border border-[#E8E3EF] rounded-lg px-2.5 py-1.5 text-xs text-[#2C1B57] font-semibold focus:outline-none focus:border-[#42326E]"
+          >
+            <option value="match">Match Score</option>
+            <option value="recent">Most Recent</option>
+            <option value="experience">Experience</option>
+            <option value="name">Name (A-Z)</option>
+          </select>
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div className="flex items-center gap-1.5 bg-[#EDE6FA] border border-[#B29CFE] rounded-xl px-2.5 py-1.5">
+            <span className="text-xs font-bold text-[#42326E]">{selectedIds.length} selected</span>
+            <div className="relative">
+              <button
+                onClick={() => setShowBulkMenu(!showBulkMenu)}
+                className="text-xs font-bold text-[#42326E] hover:underline flex items-center gap-1"
+              >
+                Bulk Action <ChevronDown className="w-3 h-3" />
+              </button>
+              {showBulkMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E3EF] rounded-xl shadow-lg z-20 min-w-[180px] py-1">
+                  {['Shortlisted', 'Interview', 'Rejected', 'Withdrawn'].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => handleBulkStatusChange(s)}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-[#2C1B57] hover:bg-[#F8F5FF]"
+                    >
+                      Move to {s}
+                    </button>
+                  ))}
                 </div>
-              </div>
-              <div className="h-8 w-full skeleton-shimmer rounded-lg" />
-              <div className="h-4 w-5/6 skeleton-shimmer rounded" />
+              )}
             </div>
-          ))}
+            <button
+              onClick={() => setSelectedIds([])}
+              className="text-[10px] text-[#6F687A] hover:text-rose-600 px-1"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* SPLIT LAYOUT */}
+      <div
+        className={`grid gap-4 ${
+          selectedApp || showMobileDetail
+            ? 'grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)]'
+            : 'grid-cols-1'
+        }`}
+      >
+        {/* LEFT: LIST */}
+        <div
+          className={`space-y-2 ${
+            selectedApp && showMobileDetail ? 'hidden xl:block' : 'block'
+          }`}
+        >
+          {filteredCandidates.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-[#E8E3EF]">
+              <Users className="w-12 h-12 text-[#B29CFE] mx-auto mb-2 opacity-50" />
+              <p className="text-sm font-bold text-[#2C1B57]">No candidates found</p>
+              <p className="text-xs text-[#6F687A] mt-1">Try adjusting filters or search</p>
+            </div>
+          ) : (
+            <>
+              <label className="flex items-center gap-2 px-2 py-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={
+                    selectedIds.length === filteredCandidates.length &&
+                    filteredCandidates.length > 0
+                  }
+                  onChange={toggleSelectAll}
+                  className="w-3.5 h-3.5 rounded accent-[#42326E] cursor-pointer"
+                />
+                <span className="text-[10px] text-[#6F687A] font-semibold">
+                  Select all ({filteredCandidates.length})
+                </span>
+              </label>
+
+              {filteredCandidates.map((cand) => {
+                const status = (cand as any).status || cand.stage;
+                const isSelected = selectedApp?._id === cand.id;
+                const avatarUrl = (cand as any).avatarUrl;
+                const showAvatarImage = avatarUrl && !avatarErrors.has(cand.id);
+
+                return (
+                  <div
+                    key={cand.id}
+                    onClick={() => handleSelectCandidate(cand)}
+                    className={`bg-white rounded-2xl border p-3 cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-[#42326E] shadow-md ring-2 ring-[#EDE6FA]'
+                        : 'border-[#E8E3EF] hover:border-[#B29CFE] hover:shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(cand.id)}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggleSelect(cand.id);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 w-3.5 h-3.5 rounded accent-[#42326E] cursor-pointer shrink-0"
+                      />
+
+                      {showAvatarImage ? (
+                        <img
+                          src={avatarUrl}
+                          alt={cand.name}
+                          className="w-10 h-10 rounded-xl object-cover border border-[#E8E3EF] shrink-0"
+                          onError={() => handleAvatarError(cand.id)}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-xs shrink-0"
+                          style={{ backgroundColor: cand.avatarBg }}
+                        >
+                          {getInitials(cand.name)}
+                        </div>
+                      )}
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-bold text-xs text-[#2C1B57] truncate leading-tight flex items-center gap-1">
+                              {cand.name}
+                              <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                            </h3>
+                            <p className="text-[11px] text-[#6F687A] truncate leading-tight mt-0.5">
+                              {cand.role}
+                            </p>
+                          </div>
+                          <span className={`text-sm font-extrabold shrink-0 ${matchColor(cand.matchScore)}`}>
+                            {cand.matchScore}%
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold border ${STATUS_COLOR_MAP[status] || STATUS_COLOR_MAP.Applied}`}
+                          >
+                            {status}
+                          </span>
+                          {cand.location && (
+                            <span className="text-[9px] text-[#6F687A] flex items-center gap-0.5">
+                              <MapPin className="w-2.5 h-2.5" />
+                              {cand.location.split(',')[0]}
+                            </span>
+                          )}
+                          {cand.bookmarked && (
+                            <span className="text-[9px] text-amber-600">⭐</span>
+                          )}
+                        </div>
+
+                        <p className="text-[10px] text-[#6F687A] mt-1 truncate">
+                          → <strong className="text-[#42326E]">{cand.jobTitle || 'Job Application'}</strong>
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={(e) => handleBookmark(cand.id, e)}
+                        className={`p-1 rounded-lg transition-colors shrink-0 ${
+                          cand.bookmarked ? 'text-amber-500' : 'text-[#6F687A] hover:text-amber-500'
+                        }`}
+                      >
+                        <Bookmark className={`w-3.5 h-3.5 ${cand.bookmarked ? 'fill-current' : ''}`} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+
+        {/* RIGHT: DETAIL PANEL */}
+        {(selectedApp || loadingDetails) && (
+          <div
+            className={`bg-white rounded-2xl border border-[#E8E3EF] overflow-hidden ${
+              showMobileDetail ? 'block' : 'hidden xl:block'
+            }`}
+          >
+            {loadingDetails ? (
+              <div className="flex items-center justify-center py-24">
+                <Loader2 className="w-8 h-8 animate-spin text-[#42326E]" />
+              </div>
+            ) : selectedApp ? (
+              <>
+                {/* STICKY HEADER */}
+                <div className="sticky top-0 z-10 bg-white border-b border-[#E8E3EF] px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    <button
+                      onClick={() => {
+                        setShowMobileDetail(false);
+                        setSelectedApp(null);
+                      }}
+                      className="xl:hidden p-1.5 rounded-lg hover:bg-[#F8F5FF] shrink-0"
+                    >
+                      <ArrowRight className="w-4 h-4 text-[#42326E] rotate-180" />
+                    </button>
+
+                    {selectedApp.candidateAvatarUrl && !avatarErrors.has(selectedApp._id) ? (
+                      <img
+                        src={selectedApp.candidateAvatarUrl}
+                        alt={selectedApp.candidateName}
+                        className="w-11 h-11 rounded-xl object-cover border-2 border-[#EDE6FA] shrink-0"
+                        onError={() => handleAvatarError(selectedApp._id)}
+                      />
+                    ) : (
+                      <div
+                        className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
+                        style={{ backgroundColor: selectedApp.avatarBg }}
+                      >
+                        {getInitials(selectedApp.candidateName)}
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h2 className="font-extrabold text-sm text-[#2C1B57] truncate">
+                          {selectedApp.candidateName}
+                        </h2>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold border ${STATUS_COLOR_MAP[selectedApp.status]}`}
+                        >
+                          {selectedApp.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#6F687A] truncate">
+                        {selectedApp.candidateJobTitle || 'Applicant'}
+                        {selectedApp.candidateCurrentCompany
+                          ? ` @ ${selectedApp.candidateCurrentCompany}`
+                          : ''}
+                      </p>
+                      <p className="text-[9px] text-[#9C94A7] mt-0.5">
+                        ID: <code>{shortId(selectedApp._id)}</code>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="relative w-11 h-11">
+                      <svg className="w-11 h-11 -rotate-90">
+                        <circle
+                          cx="22"
+                          cy="22"
+                          r="18"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          fill="none"
+                          className="text-[#EFEAF6]"
+                        />
+                        <circle
+                          cx="22"
+                          cy="22"
+                          r="18"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          fill="none"
+                          strokeDasharray={`${(selectedApp.matchPercentage / 100) * 113} 113`}
+                          className={matchColor(selectedApp.matchPercentage)}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <div
+                        className={`absolute inset-0 flex items-center justify-center font-extrabold text-[10px] ${matchColor(selectedApp.matchPercentage)}`}
+                      >
+                        {selectedApp.matchPercentage}%
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setSelectedApp(null);
+                        setShowMobileDetail(false);
+                      }}
+                      className="w-8 h-8 rounded-lg hover:bg-[#F8F5FF] flex items-center justify-center text-[#6F687A] hover:text-[#2C1B57] transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* SCROLLABLE CONTENT */}
+                <div className="p-4 space-y-3 max-h-[calc(100vh-240px)] overflow-y-auto">
+                  {/* WORKFLOW PIPELINE */}
+                  <section className="bg-gradient-to-br from-[#F8F5FF] to-white border border-[#EDE6FA] rounded-2xl p-3.5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-bold text-xs text-[#2C1B57] flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-[#42326E]" />
+                        Hiring Pipeline
+                      </h3>
+                      {isTerminalStatus && (
+                        <span
+                          className={`text-[9px] px-2 py-0.5 rounded-md font-semibold border ${STATUS_COLOR_MAP[selectedApp.status]}`}
+                        >
+                          {selectedApp.status}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-0 mb-3">
+                      {WORKFLOW_STAGES.map((stage, idx) => {
+                        const isCompleted = currentStageIndex > idx;
+                        const isCurrent = currentStageIndex === idx;
+                        const StepIcon = stage.icon;
+
+                        return (
+                          <React.Fragment key={stage.key}>
+                            <div className="flex flex-col items-center flex-shrink-0">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center border-2 border-white shadow-sm transition-all ${
+                                  isCompleted
+                                    ? 'bg-emerald-500 text-white'
+                                    : isCurrent
+                                      ? 'bg-[#42326E] text-white ring-4 ring-[#B29CFE]/30'
+                                      : 'bg-[#EFEAF6] text-[#9C94A7]'
+                                }`}
+                              >
+                                {isCompleted ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                ) : (
+                                  <StepIcon className="w-3.5 h-3.5" />
+                                )}
+                              </div>
+                              <span
+                                className={`text-[9px] mt-1 font-bold ${
+                                  isCurrent
+                                    ? 'text-[#42326E]'
+                                    : isCompleted
+                                      ? 'text-emerald-700'
+                                      : 'text-[#9C94A7]'
+                                }`}
+                              >
+                                {stage.short}
+                              </span>
+                            </div>
+                            {idx < WORKFLOW_STAGES.length - 1 && (
+                              <div
+                                className={`flex-1 h-0.5 mx-0.5 mt-[-14px] ${
+                                  isCompleted ? 'bg-emerald-400' : 'bg-[#EFEAF6]'
+                                }`}
+                              />
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+
+                    {!isTerminalStatus && selectedApp.workflow && (
+                      <div className="pt-3 border-t border-[#EDE6FA]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] text-[#6F687A] font-bold mr-1">Move to:</span>
+                          {selectedApp.workflow.allowedNextStatuses.length === 0 ? (
+                            <p className="text-[10px] text-[#9C94A7] italic">No further actions</p>
+                          ) : (
+                            selectedApp.workflow.allowedNextStatuses.map((nextStatus) => {
+                              const isReject = nextStatus === 'Rejected' || nextStatus === 'Withdrawn';
+                              return (
+                                <button
+                                  key={nextStatus}
+                                  onClick={() =>
+                                    setConfirmAction({ status: nextStatus, label: nextStatus })
+                                  }
+                                  disabled={updatingStatus}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all shadow-xs disabled:opacity-50 ${
+                                    isReject
+                                      ? 'bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100'
+                                      : 'bg-[#42326E] text-white hover:bg-[#322554]'
+                                  }`}
+                                >
+                                  {isReject ? (
+                                    <X className="w-2.5 h-2.5" />
+                                  ) : (
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  )}
+                                  {nextStatus}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* QUICK CONTACT — ONLY CALL & WHATSAPP */}
+                  {selectedApp.candidatePhone && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <a
+                        href={`tel:${selectedApp.candidatePhone}`}
+                        className="flex items-center justify-center gap-1.5 py-2.5 bg-[#42326E] hover:bg-[#322554] text-white text-xs font-bold rounded-xl shadow-xs"
+                      >
+                        <Phone className="w-3.5 h-3.5" /> Call
+                      </a>
+                      <a
+                        href={`https://wa.me/${selectedApp.candidatePhone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-1.5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                      </a>
+                    </div>
+                  )}
+
+                  {/* ⭐ RESUME SECTION — PROMINENT WITH VIEW/DOWNLOAD/OPEN */}
+                  {selectedApp.resumeUrl ? (
+                    <section className="bg-gradient-to-br from-rose-50 to-orange-50 border-2 border-rose-200 rounded-2xl p-4">
+                      <h3 className="font-bold text-xs text-[#2C1B57] flex items-center gap-1.5 mb-3 uppercase tracking-wider">
+                        <FileText className="w-4 h-4 text-rose-600" />
+                        Candidate Resume
+                      </h3>
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center shrink-0 shadow-sm">
+                          <FileText className="w-6 h-6 text-rose-600" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-[#2C1B57] truncate">
+                            {selectedApp.resumeFileName || 'Resume.pdf'}
+                          </p>
+                          <p className="text-[10px] text-[#6F687A]">PDF Document • Click below to preview</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => setShowResumeModal(true)}
+                          className="py-2.5 px-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition-all"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          View
+                        </button>
+                        <button
+                          onClick={() =>
+                            forceDownloadResume(selectedApp.resumeUrl, selectedApp.resumeFileName)
+                          }
+                          className="py-2.5 px-2 rounded-lg bg-white border-2 border-rose-200 hover:border-rose-400 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center justify-center gap-1 transition-all"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          Download
+                        </button>
+                        <a
+                          href={selectedApp.resumeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="py-2.5 px-2 rounded-lg bg-white border-2 border-rose-200 hover:border-rose-400 hover:bg-rose-50 text-rose-700 text-xs font-bold flex items-center justify-center gap-1 transition-all"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Open
+                        </a>
+                      </div>
+                    </section>
+                  ) : (
+                    <section className="bg-gray-50 border border-gray-200 rounded-2xl p-4 text-center">
+                      <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-xs font-semibold text-gray-500">No Resume Uploaded</p>
+                      <p className="text-[10px] text-gray-400 mt-1">Candidate hasn't attached a resume</p>
+                    </section>
+                  )}
+
+                  {/* CONTACT + JOB INFO */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <section className="bg-[#FCFCF7] rounded-2xl p-3">
+                      <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-2 uppercase tracking-wider">
+                        <UserCheck className="w-3 h-3" /> Contact Info
+                      </h3>
+                      <div className="space-y-1.5 text-xs">
+                        <MiniRow
+                          icon={<Phone className="w-3 h-3" />}
+                          value={selectedApp.candidatePhone}
+                          href={`tel:${selectedApp.candidatePhone}`}
+                          onCopy={() => copyToClipboard(selectedApp.candidatePhone, 'Phone')}
+                        />
+                        <MiniRow
+                          icon={<MapPin className="w-3 h-3" />}
+                          value={`${selectedApp.candidateCity}${selectedApp.candidateSubLocation ? ', ' + selectedApp.candidateSubLocation : ''}`}
+                        />
+                        <MiniRow
+                          icon={<Award className="w-3 h-3" />}
+                          value={`₹${selectedApp.candidateCurrentSalary || 'Not disclosed'}`}
+                        />
+                      </div>
+                    </section>
+
+                    <section className="bg-blue-50/50 border border-blue-100 rounded-2xl p-3">
+                      <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-2 uppercase tracking-wider">
+                        <Briefcase className="w-3 h-3 text-blue-600" /> Applied Job
+                      </h3>
+                      <div className="flex items-start gap-2">
+                        {selectedApp.jobCompanyLogo && (
+                          <img
+                            src={selectedApp.jobCompanyLogo}
+                            alt=""
+                            className="w-8 h-8 rounded-lg object-cover border border-[#E8E3EF] shrink-0"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-xs text-[#2C1B57] truncate">
+                            {selectedApp.jobTitle}
+                          </p>
+                          <p className="text-[11px] text-[#6F687A] truncate">
+                            {selectedApp.jobCompany}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-2 text-[10px] text-[#6F687A]">
+                        <span className="flex items-center gap-1 truncate">
+                          📍 {selectedApp.jobLocation}
+                        </span>
+                        <span className="flex items-center gap-1 truncate">
+                          💰 {selectedApp.jobSalary}
+                        </span>
+                      </div>
+                    </section>
+                  </div>
+
+                  {/* EXPERIENCE + EDUCATION */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <section className="bg-[#FCFCF7] rounded-2xl p-3">
+                      <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-2 uppercase tracking-wider">
+                        <Briefcase className="w-3 h-3" /> Experience
+                      </h3>
+                      <div className="space-y-1 text-xs">
+                        <InfoRow label="Level" value={selectedApp.candidateExperienceLevel} />
+                        <InfoRow
+                          label="Years"
+                          value={selectedApp.candidateExperience ? `${selectedApp.candidateExperience} yrs` : '—'}
+                        />
+                        <InfoRow label="Current Role" value={selectedApp.candidateJobTitle} />
+                        <InfoRow label="Company" value={selectedApp.candidateCurrentCompany} />
+                      </div>
+                    </section>
+
+                    <section className="bg-[#FCFCF7] rounded-2xl p-3">
+                      <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-2 uppercase tracking-wider">
+                        <GraduationCap className="w-3 h-3" /> Education
+                      </h3>
+                      {selectedApp.candidateEducation?.degree ||
+                      selectedApp.candidateEducation?.collegeName ? (
+                        <div className="space-y-1 text-xs">
+                          <InfoRow label="Degree" value={selectedApp.candidateEducation.degree} />
+                          <InfoRow
+                            label="Specialization"
+                            value={selectedApp.candidateEducation.specialization}
+                          />
+                          <InfoRow label="College" value={selectedApp.candidateEducation.collegeName} />
+                          <InfoRow label="End Year" value={selectedApp.candidateEducation.endYear} />
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-[#9C94A7] italic">No education details</p>
+                      )}
+                    </section>
+                  </div>
+
+                  {/* SKILLS */}
+                  {selectedApp.candidateSkills?.length > 0 && (
+                    <section className="bg-[#FCFCF7] rounded-2xl p-3">
+                      <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-2 uppercase tracking-wider">
+                        <Sparkles className="w-3 h-3" /> Skills{' '}
+                        <span className="text-[#6F687A]">({selectedApp.candidateSkills.length})</span>
+                      </h3>
+                      <div className="flex flex-wrap gap-1">
+                        {selectedApp.candidateSkills.map((skill, i) => (
+                          <span
+                            key={i}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-[#EDE6FA] text-[#42326E] font-semibold border border-[#D7C8ED]"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* LANGUAGES / ASSETS / CERTS */}
+                  {(selectedApp.candidateLanguages?.length > 0 ||
+                    selectedApp.candidateAssets?.length > 0 ||
+                    selectedApp.candidateCertifications?.length > 0) && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {selectedApp.candidateLanguages?.length > 0 && (
+                        <ChipSection
+                          title="Languages"
+                          icon={<Languages className="w-3 h-3" />}
+                          items={selectedApp.candidateLanguages}
+                          chipClass="bg-blue-50 text-blue-700 border-blue-200"
+                          footer={
+                            selectedApp.candidateEnglishLevel
+                              ? `English: ${selectedApp.candidateEnglishLevel}`
+                              : undefined
+                          }
+                        />
+                      )}
+                      {selectedApp.candidateAssets?.length > 0 && (
+                        <ChipSection
+                          title="Assets"
+                          icon={<Package className="w-3 h-3" />}
+                          items={selectedApp.candidateAssets}
+                          chipClass="bg-emerald-50 text-emerald-700 border-emerald-200"
+                        />
+                      )}
+                      {selectedApp.candidateCertifications?.length > 0 && (
+                        <ChipSection
+                          title="Certifications"
+                          icon={<Award className="w-3 h-3" />}
+                          items={selectedApp.candidateCertifications}
+                          chipClass="bg-amber-50 text-amber-700 border-amber-200"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* COVER NOTE */}
+                  {selectedApp.coverNote && (
+                    <section className="bg-[#FCFCF7] rounded-2xl p-3">
+                      <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-1.5 uppercase tracking-wider">
+                        <FileText className="w-3 h-3" /> Cover Note
+                      </h3>
+                      <p className="text-xs text-[#49454F] italic leading-relaxed">
+                        "{selectedApp.coverNote}"
+                      </p>
+                    </section>
+                  )}
+
+                  {/* TIMELINE */}
+                  {selectedApp.milestones?.length > 0 && (
+                    <section className="bg-[#FCFCF7] rounded-2xl p-3">
+                      <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-2 uppercase tracking-wider">
+                        <Clock className="w-3 h-3" /> Activity Timeline
+                      </h3>
+                      <div className="space-y-2 pl-2 border-l-2 border-[#EDE6FA] ml-1">
+                        {selectedApp.milestones.map((m, i) => (
+                          <div key={i} className="relative">
+                            <div
+                              className={`absolute -left-[9px] top-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${m.completed ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                            />
+                            <div className="pl-3">
+                              <p className="text-[11px] font-semibold text-[#2C1B57] leading-tight">
+                                {m.title}
+                              </p>
+                              {m.time && (
+                                <p className="text-[9px] text-[#9C94A7]">{m.time}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* DELETE */}
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      onClick={() => handleDelete(selectedApp._id)}
+                      className="px-3 py-2 rounded-xl border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50 flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete Application
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {/* CONFIRMATION MODAL */}
+      {confirmAction && selectedApp && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+            <h3 className="text-sm font-extrabold text-[#2C1B57] mb-2">Confirm Status Change</h3>
+            <p className="text-xs text-[#49454F] mb-4 leading-relaxed">
+              Move <strong>{selectedApp.candidateName}</strong> from{' '}
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-md ${STATUS_COLOR_MAP[selectedApp.status]}`}
+              >
+                {selectedApp.status}
+              </span>{' '}
+              to{' '}
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-md ${STATUS_COLOR_MAP[confirmAction.status]}`}
+              >
+                {confirmAction.status}
+              </span>
+              ?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmAction(null)}
+                disabled={updatingStatus}
+                className="px-3 py-1.5 rounded-lg border border-[#E8E3EF] text-xs text-[#49454F] font-bold hover:bg-[#F8F5FF]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleStatusChange(selectedApp._id, confirmAction.status)}
+                disabled={updatingStatus}
+                className="px-3 py-1.5 rounded-lg bg-[#42326E] hover:bg-[#322554] text-white text-xs font-bold disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {updatingStatus && <Loader2 className="w-3 h-3 animate-spin" />}
+                Confirm
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Load More Button */}
-      {visibleCount < filteredCandidates.length && (
-        <div className="flex justify-center pt-4">
-          <button
-            onClick={handleLoadMore}
-            disabled={isLoadingMore}
-            className="px-6 py-2.5 bg-white border border-[#E8E3EF] hover:border-[#B29CFE] text-xs font-bold text-[#2C1B57] rounded-xl shadow-xs transition-all disabled:opacity-50"
-          >
-            {isLoadingMore ? 'Loading candidates...' : 'Load more candidates'}
-          </button>
+      {/* RESUME PREVIEW MODAL */}
+      {showResumeModal && selectedApp?.resumeUrl && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-5xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between p-3 border-b border-[#E8E3EF]">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-rose-600" />
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm text-[#2C1B57] truncate">
+                    {selectedApp.resumeFileName || 'Resume'}
+                  </h3>
+                  <p className="text-[10px] text-[#6F687A]">{selectedApp.candidateName}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() =>
+                    forceDownloadResume(selectedApp.resumeUrl, selectedApp.resumeFileName)
+                  }
+                  className="px-3 py-1.5 rounded-lg border border-[#E8E3EF] text-xs font-bold hover:bg-[#F8F5FF] flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" />
+                  Download
+                </button>
+                <a
+                  href={selectedApp.resumeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-lg border border-[#E8E3EF] text-xs font-bold hover:bg-[#F8F5FF] flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Open
+                </a>
+                <button
+                  onClick={() => setShowResumeModal(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-[#F8F5FF] flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden bg-gray-100">
+              <iframe
+                src={`${selectedApp.resumeUrl}#toolbar=1&navpanes=0`}
+                title="Resume Preview"
+                className="w-full h-full"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST */}
+      {toast && (
+        <div
+          className={`fixed bottom-4 right-4 z-[100] px-4 py-2.5 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2 animate-in slide-in-from-bottom duration-200 ${
+            toast.type === 'error'
+              ? 'bg-rose-600 text-white'
+              : toast.type === 'info'
+                ? 'bg-blue-600 text-white'
+                : 'bg-emerald-600 text-white'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle className="w-4 h-4" />
+          ) : toast.type === 'info' ? (
+            <Copy className="w-4 h-4" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4" />
+          )}
+          {toast.message}
         </div>
       )}
     </div>
   );
 };
+
+// HELPERS
+const InfoRow: React.FC<{ label: string; value?: string | number }> = ({ label, value }) => (
+  <div className="flex justify-between gap-2 text-[11px]">
+    <span className="text-[#6F687A] shrink-0">{label}:</span>
+    <span className="text-[#2C1B57] font-semibold text-right truncate">{value || '—'}</span>
+  </div>
+);
+
+const MiniRow: React.FC<{
+  icon: React.ReactNode;
+  value: string;
+  href?: string;
+  onCopy?: () => void;
+}> = ({ icon, value, href, onCopy }) => (
+  <div className="flex items-center gap-1.5 group">
+    <span className="text-[#6F687A] shrink-0">{icon}</span>
+    {href && value ? (
+      <a href={href} className="text-[11px] text-[#42326E] hover:underline truncate flex-1 min-w-0">
+        {value || '—'}
+      </a>
+    ) : (
+      <span className="text-[11px] text-[#2C1B57] truncate flex-1 min-w-0">{value || '—'}</span>
+    )}
+    {onCopy && value && (
+      <button
+        onClick={onCopy}
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-[#EDE6FA] rounded shrink-0"
+        title="Copy"
+      >
+        <Copy className="w-3 h-3 text-[#6F687A]" />
+      </button>
+    )}
+  </div>
+);
+
+const ChipSection: React.FC<{
+  title: string;
+  icon: React.ReactNode;
+  items: string[];
+  chipClass: string;
+  footer?: string;
+}> = ({ title, icon, items, chipClass, footer }) => (
+  <div className="bg-[#FCFCF7] rounded-2xl p-3">
+    <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-1.5 uppercase tracking-wider">
+      {icon}
+      {title}
+    </h3>
+    <div className="flex flex-wrap gap-1">
+      {items.map((item, i) => (
+        <span
+          key={i}
+          className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${chipClass}`}
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+    {footer && <p className="text-[9px] text-[#9C94A7] mt-1.5">{footer}</p>}
+  </div>
+);

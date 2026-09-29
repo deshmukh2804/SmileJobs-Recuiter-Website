@@ -49,23 +49,31 @@ class QuotaService {
       const copy = { ...cand };
       const normalizedTier = (tier || "none").toLowerCase();
 
+      // ✅ ALL TIERS (INCLUDING BASIC) NOW GET FULL ACCESS
+      // Recruiters need to see resumes to hire candidates - this is critical!
+      // Only masking sensitive fields like phone/email for stricter tiers if needed
+
       if (normalizedTier === "none") {
+        // Only fully blocked if NO subscription at all
         copy.phone = "";
+        copy.candidatePhone = "";
         copy.email = "";
+        copy.candidateEmail = "";
         copy.resumeUrl = "";
+        copy.resumeFileName = "";
         copy.candidateAccessLevel = "none";
       } else if (normalizedTier === "basic") {
-        copy.phone = this._obfuscate(copy.phone);
-        copy.email = this._obfuscate(copy.email);
-        copy.resumeUrl = "";
+        // ✅ BASIC PLAN: Full access to resumes and contact
         copy.candidateAccessLevel = "basic";
+        // Keep resumeUrl and all fields as-is
       } else if (normalizedTier === "standard" || normalizedTier === "pro") {
-        copy.phone = this._obfuscate(copy.phone);
         copy.candidateAccessLevel = "standard";
+        // Keep resumeUrl and all fields as-is
       } else {
-        // enterprise or higher: full access
+        // Enterprise: full access
         copy.candidateAccessLevel = "enterprise";
       }
+
       return copy;
     });
 
