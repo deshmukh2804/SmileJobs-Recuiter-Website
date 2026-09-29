@@ -4,8 +4,8 @@ const ApiError = require("../utils/apiError");
 
 class EmailService {
   /**
-   * Dispatches verification OTP email.
-   * Uses Brevo HTTPS API v3 (Port 443) which NEVER times out on Render cloud hosting.
+   * Dispatches verification OTP email using Brevo v3 HTTPS API (Port 443).
+   * This NEVER times out on Render cloud instances.
    */
   async sendOtpEmail({ to, otp, userName, purpose = "login" }) {
     const appName = process.env.APP_NAME || "Smile Jobs";
@@ -13,7 +13,21 @@ class EmailService {
     const senderName = process.env.EMAIL_FROM_NAME || appName;
     const replyToEmail = process.env.EMAIL_REPLY_TO || senderEmail;
 
-    const apiKey = process.env.BREVO_API_KEY || process.env.SMTP_PASS;
+    // Prefer BREVO_API_KEY (xkeysib-...), fallback to SMTP_PASS
+    const apiKey = (process.env.BREVO_API_KEY || process.env.SMTP_PASS || "").trim();
+
+    if (!apiKey) {
+      console.error("❌ [EmailService] Missing BREVO_API_KEY environment variable.");
+      throw new ApiError(500, "Email service is not configured. Missing BREVO_API_KEY.");
+    }
+
+    // Friendly warning if using SMTP key for REST API
+    if (apiKey.startsWith("xsmtpsib-")) {
+      console.warn(
+        "\n⚠️ WARNING: Your key starts with 'xsmtpsib-'. This is an SMTP key, not a Brevo REST API key." +
+        "\n👉 Generate a REST API key starting with 'xkeysib-' at https://app.brevo.com/settings/keys/api and add it as BREVO_API_KEY in Render!\n"
+      );
+    }
 
     const purposeText =
       purpose === "login"
@@ -31,105 +45,112 @@ class EmailService {
 
     const textContent = `${otp} is your ${appName} verification code. This code is valid for 5 minutes. Do not share it with anyone.`;
 
-    // ═══ METHOD 1: BREVO DIRECT HTTPS REST API (Port 443 - 100% Reliable on Render) ═══
-    if (apiKey) {
-      try {
-        console.log(`📡 [Brevo HTTPS API] Dispatching OTP to: ${to} from: ${senderEmail}...`);
+    // ═══ METHOD 1: BREVO DIRECT HTTPS REST API (PORT 443) ═══
+    try {
+      console.log(`📡 [Brevo HTTPS API] Dispatching OTP to: ${to} from: ${senderEmail}...`);
 
-        const response = await axios.post(
-          "https://api.brevo.com/v3/smtp/email",
-          {
-            sender: {
-              name: senderName,
-              email: senderEmail,
-            },
-            to: [
-              {
-                email: to.trim().toLowerCase(),
-                name: userName || to.split("@")[0],
-              },
-            ],
-            replyTo: {
-              email: replyToEmail,
-              name: senderName,
-            },
-            subject: `${otp} is your ${appName} verification code`,
-            htmlContent: htmlContent,
-            textContent: textContent,
-            tags: ["otp-verification", "auth"],
+      const response = await axios.post(
+        "https://api.brevo.com/v3/smtp/email",
+        {
+          sender: {
+            name: senderName,
+            email: senderEmail,
           },
-          {
-            headers: {
-              accept: "application/json",
-              "api-key": apiKey.trim(),
-              "content-type": "application/json",
+          to: [
+            {
+              email: to.trim().toLowerCase(),
+              name: userName || to.split("@")[0],
             },
-            timeout: 10000,
-          }
-        );
+          ],
+          replyTo: {
+            email: replyToEmail,
+            name: senderName,
+          },
+          subject: `${otp} is your ${appName} verification code`,
+          htmlContent: htmlContent,
+          textContent: textContent,
+          tags: ["otp-verification", "auth"],
+        },
+        {
+          headers: {
+            accept: "application/json",
+            "api-key": apiKey,
+            "content-type": "application/json",
+          },
+          timeout: 12000,
+        }
+      );
 
-        console.log(`✅ [Brevo API Delivered] Message ID: ${response.data?.messageId}`);
-        return { success: true, messageId: response.data?.messageId };
-      } catch (apiErr) {
-        const errDetails = apiErr.response?.data;
-        console.error("❌ [Brevo API Error]:", {
-          status: apiErr.response?.status,
-          message: errDetails?.message || apiErr.message,
+      console.log(`✅ [Brevo API Delivered] Message ID: ${response.data?.messageId}`);
+      return { success: true, messageId: response.data?.messageId };
+    } catch (apiErr) {
+      const errDetails = apiErr.response?.data;
+      console.error("❌ [Brevo API Error]:", {
+        status: apiErr.response?.status,
+        code: errDetails?.code,
+        message: errDetails?.message || apiErr.message,
+      });
+
+      if (apiErr.response?.status === 401) {
+        throw new ApiError(
+          500,
+          "Invalid Brevo API Key. Please generate a REST API key (starts with 'xkeysib-') from https://app.brevo.com/settings/keys/api and set it as BREVO_API_KEY in Render."
+        );
+      }
+
+      if (errDetails?.message && errDetails.message.toLowerCase().includes("sender")) {
+        throw new ApiError(
+          500,
+          `Sender email '${senderEmail}' is not verified in Brevo. Verify it at https://app.brevo.com/senders.`
+        );
+      }
+
+      // ═══ METHOD 2: SMTP FALLBACK (If API failed with non-auth error) ═══
+      console.log(`📡 [SMTP Fallback] Attempting send via nodemailer...`);
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
+          port: parseInt(process.env.SMTP_PORT || "587", 10),
+          secure: false,
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+          connectionTimeout: 5000,
         });
 
-        // If it's a sender authentication issue, log clear instructions
-        if (errDetails?.message && errDetails.message.includes("sender")) {
-          console.error(
-            `\n⚠️ SENDER EMAIL ISSUE: "${senderEmail}" is not verified in Brevo.` +
-            `\n👉 Go to https://app.brevo.com/senders to verify this email address.\n`
-          );
-        }
+        const info = await transporter.sendMail({
+          from: `"${senderName}" <${senderEmail}>`,
+          to: to.trim().toLowerCase(),
+          replyTo: replyToEmail,
+          subject: `${otp} is your ${appName} verification code`,
+          text: textContent,
+          html: htmlContent,
+        });
+
+        console.log(`✅ [SMTP Delivered] Message ID: ${info.messageId}`);
+        return { success: true, messageId: info.messageId };
+      } catch (smtpErr) {
+        console.error("❌ [SMTP Delivery Error]:", smtpErr.message);
+        throw new ApiError(
+          500,
+          `Email delivery failed: ${errDetails?.message || smtpErr.message}`
+        );
       }
-    }
-
-    // ═══ METHOD 2: SMTP FALLBACK (If API Key is missing or failed) ═══
-    try {
-      console.log(`📡 [SMTP Fallback] Attempting send via nodemailer...`);
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
-        port: parseInt(process.env.SMTP_PORT || "587", 10),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-        connectionTimeout: 8000, // 8s timeout to avoid hanging
-      });
-
-      const info = await transporter.sendMail({
-        from: `"${senderName}" <${senderEmail}>`,
-        to: to.trim().toLowerCase(),
-        replyTo: replyToEmail,
-        subject: `${otp} is your ${appName} verification code`,
-        text: textContent,
-        html: htmlContent,
-      });
-
-      console.log(`✅ [SMTP Delivered] Message ID: ${info.messageId}`);
-      return { success: true, messageId: info.messageId };
-    } catch (smtpErr) {
-      console.error("❌ [SMTP Delivery Error]:", smtpErr.message);
-      throw new ApiError(
-        500,
-        `Email delivery failed: ${smtpErr.message}. Please check your Brevo credentials.`
-      );
     }
   }
 
   /**
-   * Welcome email for newly registered recruiters
+   * Welcome Email for newly registered recruiters
    */
   async sendWelcomeEmail({ to, userName }) {
     const appName = process.env.APP_NAME || "Smile Jobs";
     const senderEmail = process.env.EMAIL_FROM || "info.smilejobs@gmail.com";
     const senderName = process.env.EMAIL_FROM_NAME || appName;
     const frontendUrl = process.env.FRONTEND_URL || "https://smile-jobs-recuiter-website.vercel.app";
-    const apiKey = process.env.BREVO_API_KEY || process.env.SMTP_PASS;
+    const apiKey = (process.env.BREVO_API_KEY || process.env.SMTP_PASS || "").trim();
+
+    if (!apiKey) return { success: false };
 
     const html = `
       <!DOCTYPE html>
@@ -159,25 +180,23 @@ class EmailService {
     `;
 
     try {
-      if (apiKey) {
-        await axios.post(
-          "https://api.brevo.com/v3/smtp/email",
-          {
-            sender: { name: senderName, email: senderEmail },
-            to: [{ email: to.trim().toLowerCase(), name: userName || to.split("@")[0] }],
-            subject: `Welcome to ${appName}! 🎉`,
-            htmlContent: html,
+      await axios.post(
+        "https://api.brevo.com/v3/smtp/email",
+        {
+          sender: { name: senderName, email: senderEmail },
+          to: [{ email: to.trim().toLowerCase(), name: userName || to.split("@")[0] }],
+          subject: `Welcome to ${appName}! 🎉`,
+          htmlContent: html,
+        },
+        {
+          headers: {
+            accept: "application/json",
+            "api-key": apiKey,
+            "content-type": "application/json",
           },
-          {
-            headers: {
-              accept: "application/json",
-              "api-key": apiKey.trim(),
-              "content-type": "application/json",
-            },
-            timeout: 8000,
-          }
-        );
-      }
+          timeout: 8000,
+        }
+      );
       return { success: true };
     } catch (e) {
       console.warn("⚠️ Welcome email skipped:", e.message);
