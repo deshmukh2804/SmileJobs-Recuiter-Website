@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { AppRoute } from '../types';
 import { jobService } from '../services/jobService';
+import {
+  Briefcase, CheckCircle2, FileEdit, PauseCircle, XCircle, Search, 
+  X, RotateCcw, Plus, ShieldCheck, MapPin, Star, Eye, Edit3, Trash2, 
+  MessageCircle, Phone, PlayCircle, Loader2, AlertTriangle, Users
+} from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════════════
    INTERFACES
@@ -56,7 +61,6 @@ interface BackendJob {
   contactVisibility?: { whatsapp?: boolean; mobile?: boolean };
   jobDescription?: string;
   qualification?: string;
-  companyInitials?: string;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -306,64 +310,54 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
   };
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6">
+    <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6 bg-[#FAFAFA] min-h-screen">
       {/* ─── Toast ─── */}
       {toast && (
         <div
-          className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border ${
+          className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-2 text-sm font-semibold animate-in slide-in-from-right duration-200 ${
             toast.type === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-rose-50 border-rose-200 text-rose-800'
           }`}
         >
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <span className="material-symbols-outlined text-[18px]">
-              {toast.type === 'success' ? 'check_circle' : 'error'}
-            </span>
-            <span>{toast.msg}</span>
-          </div>
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+          <span>{toast.msg}</span>
         </div>
       )}
 
       {/* ─── Delete Modal ─── */}
       {confirmDeleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-200 p-6">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-200 p-6 animate-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
-                <span className="material-symbols-outlined text-rose-600 text-[24px]">delete_forever</span>
+                <Trash2 className="w-6 h-6 text-rose-600" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-[#2C1B57]">Delete Job Listing?</h3>
                 <p className="text-xs text-gray-500">This action cannot be undone.</p>
               </div>
             </div>
-            <p className="text-sm text-gray-700 my-4">
+            <p className="text-sm text-gray-700 my-4 leading-relaxed">
               Are you sure you want to permanently delete this job listing? Shared company logos used by other jobs will be <strong>preserved automatically</strong>.
             </p>
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => setConfirmDeleteId(null)}
                 disabled={isDeleting}
-                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDeleteJob(confirmDeleteId)}
                 disabled={isDeleting}
-                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 flex items-center gap-1 disabled:opacity-70"
+                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 flex items-center gap-1.5 disabled:opacity-70 transition-colors"
               >
                 {isDeleting ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
-                    Deleting...
-                  </>
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Deleting...</>
                 ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[16px]">delete</span>
-                    Yes, Delete
-                  </>
+                  <><Trash2 className="w-4 h-4" /> Yes, Delete</>
                 )}
               </button>
             </div>
@@ -373,10 +367,10 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
 
       {/* ─── Error Banner ─── */}
       {apiError && (
-        <div className="p-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-xs flex items-center gap-2">
-          <span className="material-symbols-outlined text-[14px]">cloud_off</span>
-          <span>Backend issue: {apiError}</span>
-          <button onClick={() => fetchJobs()} className="ml-auto text-amber-700 hover:underline font-semibold">
+        <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-sm flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="flex-1 font-medium">Backend issue: {apiError}</span>
+          <button onClick={() => fetchJobs()} className="text-amber-700 hover:underline font-bold px-3 py-1 rounded-lg hover:bg-amber-100">
             Retry
           </button>
         </div>
@@ -390,11 +384,11 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
               Recruiter Console
             </span>
             {(loading || refreshing) && (
-              <span className="w-3 h-3 border-2 border-[#42326E]/30 border-t-[#42326E] rounded-full animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 text-[#42326E] animate-spin" />
             )}
           </div>
-          <h1 className="text-2xl text-[#2C1B57] font-bold mt-1">My Job Listings</h1>
-          <p className="text-sm text-gray-600">
+          <h1 className="text-2xl text-[#2C1B57] font-extrabold mt-1 tracking-tight">My Job Listings</h1>
+          <p className="text-sm text-gray-600 mt-0.5">
             Review, edit, feature, and manage your posted career opportunities.
           </p>
         </div>
@@ -402,16 +396,16 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
           <button
             onClick={() => fetchJobs(true)}
             disabled={refreshing}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 font-medium hover:bg-gray-50 shadow-sm transition-colors text-sm disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold hover:bg-gray-50 shadow-sm transition-colors text-sm disabled:opacity-50"
           >
-            <span className={`material-symbols-outlined text-[18px] ${refreshing ? 'animate-spin' : ''}`}>refresh</span>
+            <RotateCcw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
           <button
             onClick={() => onNavigate('post-job')}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#42326E] text-white font-bold shadow-md hover:bg-[#322554] transition-all text-sm active:scale-95"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#42326E] text-white font-bold shadow-md hover:bg-[#322554] transition-all text-sm active:scale-95"
           >
-            <span className="material-symbols-outlined text-[18px]">add</span>
+            <Plus className="w-4.5 h-4.5" />
             <span>Post New Job</span>
           </button>
         </div>
@@ -420,26 +414,30 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
       {/* ─── KPI Cards ─── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
-          { label: 'Total Jobs', value: counts.total, icon: 'list_alt' },
-          { label: 'Live', value: counts.live, icon: 'check_circle', filter: 'Live' as const },
-          { label: 'Draft', value: counts.draft, icon: 'edit_note', filter: 'Draft' as const },
-          { label: 'Paused', value: counts.paused, icon: 'pause_circle', filter: 'Paused' as const },
-          { label: 'Closed', value: counts.closed, icon: 'cancel', filter: 'Closed' as const },
+          { label: 'Total Jobs', value: counts.total, icon: Briefcase, filter: 'All' as const },
+          { label: 'Live', value: counts.live, icon: CheckCircle2, filter: 'Live' as const },
+          { label: 'Draft', value: counts.draft, icon: FileEdit, filter: 'Draft' as const },
+          { label: 'Paused', value: counts.paused, icon: PauseCircle, filter: 'Paused' as const },
+          { label: 'Closed', value: counts.closed, icon: XCircle, filter: 'Closed' as const },
         ].map(kpi => (
           <div
             key={kpi.label}
-            onClick={() => kpi.filter && setActiveTab(kpi.filter)}
-            className={`bg-white p-4 rounded-xl border border-gray-200 shadow-sm transition-all ${
-              kpi.filter ? 'cursor-pointer hover:border-[#42326E] hover:shadow-md' : ''
+            onClick={() => setActiveTab(kpi.filter)}
+            className={`bg-white p-4 rounded-2xl border transition-all ${
+              activeTab === kpi.filter 
+                ? 'border-[#42326E] shadow-md ring-2 ring-[#42326E]/10' 
+                : 'border-gray-200 shadow-sm cursor-pointer hover:border-[#42326E] hover:shadow-md'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-gray-500 text-xs">{kpi.label}</span>
-              <span className="p-1.5 rounded-lg bg-[#F8F5FF]">
-                <span className="material-symbols-outlined text-[16px] text-[#42326E]">{kpi.icon}</span>
+              <span className={`text-xs font-bold ${activeTab === kpi.filter ? 'text-[#42326E]' : 'text-gray-500'}`}>
+                {kpi.label}
+              </span>
+              <span className={`p-1.5 rounded-lg ${activeTab === kpi.filter ? 'bg-[#42326E] text-white' : 'bg-[#F8F5FF] text-[#42326E]'}`}>
+                <kpi.icon className="w-4 h-4" />
               </span>
             </div>
-            <h3 className="text-2xl text-[#2C1B57] font-bold tracking-tight mt-2">
+            <h3 className="text-2xl text-[#2C1B57] font-extrabold tracking-tight mt-3">
               {kpi.value.toLocaleString()}
             </h3>
           </div>
@@ -447,7 +445,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
       </div>
 
       {/* ─── Tabs ─── */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
         {[
           { key: 'All' as const, label: 'All Jobs', count: counts.total },
           { key: 'Live' as const, label: 'Live', count: counts.live },
@@ -458,16 +456,16 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
               activeTab === tab.key
-                ? 'bg-[#42326E] text-white shadow-sm'
-                : 'bg-[#F8F5FF] text-gray-700 hover:bg-[#EDE6FA]'
+                ? 'bg-[#42326E] text-white shadow-md'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
             }`}
           >
             <span>{tab.label}</span>
             <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-                activeTab === tab.key ? 'bg-white/20' : 'bg-black/10'
+              className={`px-2 py-0.5 rounded-full text-[10px] ${
+                activeTab === tab.key ? 'bg-white/20' : 'bg-gray-100 text-gray-500'
               }`}
             >
               {tab.count.toLocaleString()}
@@ -477,25 +475,23 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
       </div>
 
       {/* ─── Filter Toolbar ─── */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
           <div className="relative flex-1">
-            <span className="material-symbols-outlined text-[18px] text-gray-400 absolute left-3 top-1/2 -translate-y-1/2">
-              search
-            </span>
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search Job title, Company, ID..."
-              className="w-full pl-9 pr-8 py-2 rounded-lg bg-gray-50 text-gray-900 border border-gray-200 focus:outline-none focus:border-[#42326E] text-xs"
+              className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-gray-50 text-gray-900 border border-gray-200 focus:outline-none focus:border-[#42326E] focus:ring-2 focus:ring-[#42326E]/10 text-xs font-medium transition-all"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
               >
-                <span className="material-symbols-outlined text-[16px]">close</span>
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -503,7 +499,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
             <select
               value={jobTypeFilter}
               onChange={e => setJobTypeFilter(e.target.value)}
-              className="px-2.5 py-2 rounded-lg bg-gray-50 text-gray-900 border border-gray-200 focus:outline-none focus:border-[#42326E] cursor-pointer"
+              className="px-3 py-2.5 rounded-xl bg-gray-50 text-gray-900 border border-gray-200 focus:outline-none focus:border-[#42326E] font-medium cursor-pointer"
             >
               <option value="All">Job Type: All</option>
               <option value="Full-Time">Full-Time</option>
@@ -514,7 +510,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
             <select
               value={workModeFilter}
               onChange={e => setWorkModeFilter(e.target.value)}
-              className="px-2.5 py-2 rounded-lg bg-gray-50 text-gray-900 border border-gray-200 focus:outline-none focus:border-[#42326E] cursor-pointer"
+              className="px-3 py-2.5 rounded-xl bg-gray-50 text-gray-900 border border-gray-200 focus:outline-none focus:border-[#42326E] font-medium cursor-pointer"
             >
               <option value="All">Mode: All</option>
               <option value="On-site">On-site</option>
@@ -523,9 +519,9 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
             </select>
             <button
               onClick={clearAllFilters}
-              className="px-2.5 py-2 rounded-lg text-gray-500 hover:text-[#42326E] flex items-center gap-1"
+              className="px-3 py-2.5 rounded-xl text-gray-500 hover:text-[#42326E] hover:bg-gray-50 font-bold flex items-center gap-1.5 transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+              <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
             </button>
           </div>
@@ -534,29 +530,31 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
 
       {/* ─── Job List ─── */}
       {loading && filteredJobs.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
-          <span className="w-8 h-8 border-[3px] border-[#42326E]/30 border-t-[#42326E] rounded-full animate-spin inline-block mb-3" />
-          <p className="font-semibold text-gray-500">Loading jobs from database...</p>
+        <div className="flex flex-col items-center justify-center py-24 bg-white rounded-2xl border border-gray-200 shadow-sm">
+          <Loader2 className="w-8 h-8 text-[#42326E] animate-spin mb-4" />
+          <p className="font-bold text-gray-500">Loading your jobs...</p>
         </div>
       ) : filteredJobs.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
-          <span className="material-symbols-outlined text-6xl text-gray-400 mb-3">work_off</span>
-          <p className="font-bold text-[#2C1B57] mb-1">No job listings found</p>
-          <p className="text-xs text-gray-500 mb-4">
-            {jobs.length === 0 ? 'Create your first job to attract talent.' : 'Try relaxing your filters.'}
+        <div className="flex flex-col items-center justify-center py-24 bg-white rounded-2xl border border-gray-200 shadow-sm">
+          <div className="w-16 h-16 bg-[#F8F5FF] rounded-full flex items-center justify-center mb-4">
+            <Briefcase className="w-8 h-8 text-[#42326E]" />
+          </div>
+          <p className="font-extrabold text-lg text-[#2C1B57] mb-1">No job listings found</p>
+          <p className="text-xs text-gray-500 mb-6 max-w-sm text-center">
+            {jobs.length === 0 ? 'Create your first job listing to start attracting top talent to your company.' : 'No jobs match your current search and filter criteria.'}
           </p>
           <button
             onClick={() => onNavigate('post-job')}
-            className="px-4 py-2 rounded-lg bg-[#42326E] text-white text-xs font-bold inline-flex items-center gap-1 hover:bg-[#322554]"
+            className="px-6 py-3 rounded-xl bg-[#42326E] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#322554] shadow-md transition-all active:scale-95"
           >
-            <span className="material-symbols-outlined text-[16px]">add</span>
+            <Plus className="w-4 h-4" />
             Post New Job
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
           {/* List Header (Desktop) */}
-          <div className="hidden md:grid md:grid-cols-12 gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wide">
+          <div className="hidden md:grid md:grid-cols-12 gap-4 px-6 py-4 bg-gray-50/80 border-b border-gray-200 text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
             <div className="col-span-4">Job Details</div>
             <div className="col-span-2">Location & Mode</div>
             <div className="col-span-2">Salary</div>
@@ -570,13 +568,13 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
             {filteredJobs.map(job => (
               <div
                 key={job._id}
-                className={`group grid grid-cols-1 md:grid-cols-12 gap-3 px-4 py-4 items-center hover:bg-[#F8F5FF]/40 transition-colors ${
-                  job.featured ? 'bg-amber-50/30' : ''
+                className={`group grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-5 items-center hover:bg-[#F8F5FF]/30 transition-colors ${
+                  job.featured ? 'bg-amber-50/20' : ''
                 }`}
               >
                 {/* Col 1: Job Details */}
                 <div className="col-span-1 md:col-span-4 flex items-start gap-3 min-w-0">
-                  <div className="w-11 h-11 rounded-lg bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-sm shadow-sm shrink-0 overflow-hidden">
+                  <div className="w-12 h-12 rounded-xl bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-sm shadow-sm shrink-0 overflow-hidden">
                     {job.companyLogo?.url ? (
                       <img
                         src={job.companyLogo.url}
@@ -593,58 +591,52 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 mb-0.5">
                       <h3
                         onClick={() => handleViewJob(job._id)}
-                        className="font-bold text-[#2C1B57] text-sm cursor-pointer hover:underline truncate"
+                        className="font-extrabold text-[#2C1B57] text-[15px] cursor-pointer hover:text-[#42326E] hover:underline truncate"
                         title={job.title}
                       >
                         {job.title}
                       </h3>
                       {job.featured && (
-                        <span className="material-symbols-outlined text-[15px] text-amber-500 shrink-0" title="Featured">
-                          star
-                        </span>
+                        <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Featured" />
                       )}
                     </div>
                     <div className="flex items-center gap-1 mt-0.5">
-                      <span className="text-xs text-gray-600 truncate font-medium">{job.companyName}</span>
+                      <span className="text-xs text-gray-600 font-semibold truncate">{job.companyName}</span>
                       {job.isCompanyVerified && (
-                        <span className="material-symbols-outlined text-[12px] text-emerald-600">verified</span>
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" title="Verified" />
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       {job.isNew && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#EDE6FA] text-[#42326E] font-bold text-[9px]">
+                        <span className="px-1.5 py-0.5 rounded-md bg-[#EDE6FA] text-[#42326E] font-bold text-[9px]">
                           NEW
                         </span>
                       )}
-                      <span className="text-[10px] text-gray-400 font-medium">{job.jobType || 'Full-Time'}</span>
+                      <span className="text-[10px] text-gray-500 font-semibold">{job.jobType || 'Full-Time'}</span>
                       <span className="text-[10px] text-gray-400">•</span>
                       <span className="font-mono text-[9px] text-gray-400">#{job._id.slice(-6)}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1.5">
+                    <div className="flex items-center gap-2 mt-2">
                       <span
-                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold ${
                           job.contactVisibility?.whatsapp
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-gray-100 text-gray-400'
+                            : 'bg-gray-100 text-gray-400 border border-gray-200'
                         }`}
-                        title="WhatsApp Visibility"
                       >
-                        <span className="material-symbols-outlined text-[10px]">chat</span>
-                        WA
+                        <MessageCircle className="w-2.5 h-2.5" /> WA
                       </span>
                       <span
-                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold ${
                           job.contactVisibility?.mobile
                             ? 'bg-[#EDE6FA] text-[#42326E] border border-[#D7C8ED]'
-                            : 'bg-gray-100 text-gray-400'
+                            : 'bg-gray-100 text-gray-400 border border-gray-200'
                         }`}
-                        title="Mobile Visibility"
                       >
-                        <span className="material-symbols-outlined text-[10px]">phone</span>
-                        Mobile
+                        <Phone className="w-2.5 h-2.5" /> Mobile
                       </span>
                     </div>
                   </div>
@@ -652,34 +644,36 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
 
                 {/* Col 2: Location */}
                 <div className="col-span-1 md:col-span-2 text-xs text-gray-700">
-                  <div className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px] text-gray-400">location_on</span>
-                    <span className="truncate font-semibold">{job.location?.city || 'N/A'}</span>
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span className="truncate font-bold">{job.location?.city || 'N/A'}</span>
                   </div>
-                  <div className="flex items-center gap-1 mt-1 text-gray-400">
-                    <span className="material-symbols-outlined text-[14px]">work</span>
+                  <div className="flex items-center gap-1.5 mt-1.5 text-gray-500 font-medium">
+                    <Briefcase className="w-3.5 h-3.5 shrink-0" />
                     <span>{job.workMode || 'On-site'}</span>
                   </div>
                 </div>
 
                 {/* Col 3: Salary */}
                 <div className="col-span-1 md:col-span-2">
-                  <div className="text-sm font-bold text-[#2C1B57] font-mono">
+                  <div className="text-sm font-extrabold text-[#2C1B57] font-mono tracking-tight">
                     {formatSalary(job.salary?.min, job.salary?.max, job.salary?.currency, job.salary?.period)}
                   </div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(job.postedAt || job.createdAt)}</div>
+                  <div className="text-[10px] text-gray-500 font-medium mt-1">
+                    {formatDate(job.postedAt || job.createdAt)}
+                  </div>
                 </div>
 
                 {/* Col 4: Applicants */}
                 <div className="col-span-1 md:col-span-1 text-center">
                   <button
                     onClick={() => onViewApplicants?.(job._id, job.title)}
-                    className="text-sm font-bold text-[#2C1B57] hover:text-[#42326E] hover:underline"
+                    className="text-[15px] font-extrabold text-[#42326E] hover:text-[#2C1B57] hover:underline"
                   >
                     {job.applicantsCount || 0}
-                    <span className="text-gray-400 font-normal text-[10px]">/{job.applicantsCap || 100}</span>
+                    <span className="text-gray-400 font-medium text-[10px]">/{job.applicantsCap || 100}</span>
                   </button>
-                  <div className="w-full bg-[#F8F5FF] h-1 rounded-full overflow-hidden mt-1">
+                  <div className="w-full bg-[#F8F5FF] border border-[#E8E3EF] h-1.5 rounded-full overflow-hidden mt-1.5">
                     <div
                       className="bg-[#42326E] h-full rounded-full transition-all"
                       style={{
@@ -692,7 +686,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                 {/* Col 5: Status */}
                 <div className="col-span-1 md:col-span-1 text-center">
                   <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap border ${
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold whitespace-nowrap border ${
                       job.status === 'Live'
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                         : job.status === 'Draft'
@@ -718,54 +712,52 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                 </div>
 
                 {/* Col 6: Actions */}
-                <div className="col-span-1 md:col-span-2 flex items-center justify-end gap-1">
+                <div className="col-span-1 md:col-span-2 flex items-center justify-end gap-1.5">
                   <button
                     onClick={() => handleViewJob(job._id)}
-                    className="p-1.5 rounded-lg text-gray-500 hover:text-[#42326E] hover:bg-[#F8F5FF] transition-colors"
-                    title="View Details"
+                    className="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="View Public Listing"
                   >
-                    <span className="material-symbols-outlined text-[16px]">visibility</span>
+                    <Eye className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleEditJob(job._id)}
-                    className="px-2 py-1.5 rounded-lg bg-[#42326E] text-white text-[11px] font-semibold flex items-center gap-1 hover:bg-[#322554] transition-colors"
+                    className="px-3 py-2 rounded-lg bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] text-xs font-bold flex items-center gap-1.5 hover:bg-[#42326E] hover:text-white transition-all shadow-sm"
                     title="Edit Job"
                   >
-                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                    <Edit3 className="w-3.5 h-3.5" />
                     <span className="hidden lg:inline">Edit</span>
                   </button>
                   <button
                     onClick={() => handleToggleFeature(job)}
                     disabled={actionLoading === job._id}
-                    className={`p-1.5 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50 ${
-                      job.featured ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'
+                    className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
+                      job.featured ? 'text-amber-500 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'
                     }`}
-                    title={job.featured ? 'Unfeature' : 'Feature Job'}
+                    title={job.featured ? 'Remove Feature' : 'Feature Job'}
                   >
-                    <span className="material-symbols-outlined text-[16px]">
-                      {job.featured ? 'star' : 'star_border'}
-                    </span>
+                    <Star className={`w-4 h-4 ${job.featured ? 'fill-amber-400' : ''}`} />
                   </button>
                   <button
                     onClick={() => handleToggleStatus(job)}
                     disabled={actionLoading === job._id || job.status === 'Closed'}
-                    className="p-1.5 rounded-lg text-gray-500 hover:text-[#42326E] hover:bg-[#F8F5FF] transition-colors disabled:opacity-30"
-                    title={job.status === 'Live' ? 'Pause' : 'Activate'}
+                    className="p-2 rounded-lg text-gray-500 hover:text-[#42326E] hover:bg-[#F8F5FF] transition-colors disabled:opacity-30"
+                    title={job.status === 'Live' ? 'Pause Job' : 'Activate Job'}
                   >
                     {actionLoading === job._id ? (
-                      <span className="w-4 h-4 border-2 border-[#42326E]/30 border-t-[#42326E] rounded-full animate-spin inline-block" />
+                      <Loader2 className="w-4 h-4 animate-spin text-[#42326E]" />
+                    ) : job.status === 'Live' ? (
+                      <PauseCircle className="w-4 h-4" />
                     ) : (
-                      <span className="material-symbols-outlined text-[16px]">
-                        {job.status === 'Live' ? 'pause_circle' : 'play_circle'}
-                      </span>
+                      <PlayCircle className="w-4 h-4" />
                     )}
                   </button>
                   <button
                     onClick={() => setConfirmDeleteId(job._id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                     title="Delete Job"
                   >
-                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -776,22 +768,22 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
 
       {/* ─── Footer ─── */}
       {filteredJobs.length > 0 && (
-        <div className="bg-white p-4 rounded-xl border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500 shadow-sm">
           <div>
             Showing <strong className="text-[#2C1B57]">{filteredJobs.length}</strong> of{' '}
             <strong className="text-[#2C1B57]">{counts.total}</strong> jobs
           </div>
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <strong className="text-[#2C1B57]">{counts.live}</strong> Live
             </span>
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px] text-amber-500">star</span>
+            <span className="flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
               <strong className="text-[#2C1B57]">{counts.featured}</strong> Featured
             </span>
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px] text-[#42326E]">group</span>
+            <span className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-[#42326E]" />
               <strong className="text-[#2C1B57]">{counts.totalApplicants}</strong> Applicants
             </span>
           </div>
