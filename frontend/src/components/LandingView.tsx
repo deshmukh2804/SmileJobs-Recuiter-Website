@@ -19,6 +19,7 @@ import {
   Menu,
 } from 'lucide-react';
 
+
 interface LandingViewProps {
   onNavigate: (route: AppRoute) => void;
   featuredCandidates: Candidate[];
@@ -26,6 +27,42 @@ interface LandingViewProps {
   onOpenInfo: (type: 'privacy' | 'terms' | 'contact') => void;
   authUser: AuthUser | null;
 }
+
+
+// ✅ APP LOGO COMPONENT — uses your uploaded logo.png with smart fallback
+const AppLogo = ({ className = "w-8 h-8" }: { className?: string }) => {
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  if (logoFailed) {
+    // Fallback: branded "SJ" circle if logo.png fails to load
+    return (
+      <div className={`${className} rounded-xl bg-gradient-to-br from-[#42326E] to-[#2C1B57] flex items-center justify-center text-white font-extrabold shadow-md shrink-0`}>
+        <span style={{ fontSize: '0.4em' }}>SJ</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src="/logo.png"
+      alt="Smile Jobs"
+      className={`object-contain shrink-0 ${className}`}
+      style={{ display: 'inline-block', minWidth: '1rem', minHeight: '1rem' }}
+      onError={() => setLogoFailed(true)}
+    />
+  );
+};
+
+
+// ✅ HELPER: Generate initials from full name
+const getInitials = (name: string): string =>
+  name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
 
 export const LandingView: React.FC<LandingViewProps> = ({
   onNavigate,
@@ -42,6 +79,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   const [activeShowcaseTab, setActiveShowcaseTab] = useState<number>(0);
   const heroRef = useRef<HTMLDivElement>(null);
 
+
   useEffect(() => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 20);
@@ -49,6 +87,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!heroRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches || window.innerWidth < 1024) return;
@@ -58,9 +97,11 @@ export const LandingView: React.FC<LandingViewProps> = ({
     setTilt({ x: px * 2, y: -py * 2 });
   };
 
+
   const handleMouseLeave = () => {
     setTilt({ x: 0, y: 0 });
   };
+
 
   // Filtered talent for live preview section
   const displayTalent = (authUser ? featuredCandidates : INITIAL_CANDIDATES).filter((c) => {
@@ -71,6 +112,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     if (talentRoleFilter === 'Product') return c.department === 'Product' || c.role.toLowerCase().includes('growth');
     return true;
   });
+
 
   const showcaseItems = [
     {
@@ -114,8 +156,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
     },
     {
       title: 'Frictionless Interview Sync',
-      subtitle: 'Meet & Zoom in one click',
-      description: 'Say goodbye to 10-email scheduling chains. Candidates pick live panel slots directly synced with your hiring managers’ Google Calendar and Microsoft Teams.',
+      subtitle: 'Meet and Zoom in one click',
+      description: 'Say goodbye to 10-email scheduling chains. Candidates pick live panel slots directly synced with your hiring managers Google Calendar and Microsoft Teams.',
       badge: 'Zero Scheduling Lag',
       icon: Calendar,
       color: '#C58A3A',
@@ -127,10 +169,15 @@ export const LandingView: React.FC<LandingViewProps> = ({
     },
   ];
 
+
   return (
     <div className="landing-page min-h-screen bg-[#FCFCF7] text-[#29233A] flex flex-col selection:bg-[#EDE6FA] selection:text-[#322554] overflow-x-hidden">
       <div className="landing-ambient pointer-events-none absolute inset-x-0 top-0 h-[820px]" aria-hidden="true" />
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* NAVIGATION BAR WITH LOGO                   */}
+      {/* ═══════════════════════════════════════════ */}
       <nav
         aria-label="Main navigation"
         className={`sticky top-0 z-40 transition-all duration-300 ${
@@ -140,60 +187,44 @@ export const LandingView: React.FC<LandingViewProps> = ({
         }`}
       >
         <div className="max-w-[1440px] mx-auto px-5 sm:px-10 lg:px-14 xl:px-20 h-[74px] flex items-center justify-between gap-5">
-          {/* Logo */}
+          {/* ✅ LOGO IN NAVBAR */}
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="flex items-center gap-3 font-extrabold text-xl text-[#2C1B57] cursor-pointer group shrink-0"
             aria-label="Smile Jobs, back to top"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#2C1B57] via-[#42326E] to-[#B29CFE] relative flex items-center justify-center shadow-md group-hover:scale-105 transition-transform duration-300">
-              <div className="w-4 h-4 border-2 border-white border-t-0 rounded-b-xs" />
-              <div className="absolute top-2 w-4 h-0.5 bg-white rounded-full" />
-            </div>
+            <AppLogo className="w-10 h-10 rounded-xl shadow-md group-hover:scale-105 transition-transform duration-300" />
             <span className="tracking-tight text-xl font-extrabold text-[#2C1B57]">
               Smile Jobs
             </span>
           </button>
 
+
           {/* Center Links */}
           <div className="hidden lg:flex items-center gap-9 text-xs uppercase tracking-wider font-bold text-[#49454F]">
-            <a
-              href="#platform"
-              className="hover:text-[#2C1B57] transition-colors relative py-1 group"
-            >
+            <a href="#platform" className="hover:text-[#2C1B57] transition-colors relative py-1 group">
               Platform
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#42326E] transition-all group-hover:w-full" />
             </a>
-            <a
-              href="#showcase"
-              className="hover:text-[#2C1B57] transition-colors relative py-1 group"
-            >
+            <a href="#showcase" className="hover:text-[#2C1B57] transition-colors relative py-1 group">
               Showcase
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#42326E] transition-all group-hover:w-full" />
             </a>
-            <a
-              href="#comparison"
-              className="hover:text-[#2C1B57] transition-colors relative py-1 group"
-            >
+            <a href="#comparison" className="hover:text-[#2C1B57] transition-colors relative py-1 group">
               Comparison
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#42326E] transition-all group-hover:w-full" />
             </a>
-            <button
-              onClick={() => onNavigate('candidates')}
-              className="hover:text-[#2C1B57] transition-colors text-left relative py-1 group"
-            >
+            <button onClick={() => onNavigate('candidates')} className="hover:text-[#2C1B57] transition-colors text-left relative py-1 group">
               Talent Directory
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#42326E] transition-all group-hover:w-full" />
             </button>
-            <button
-              onClick={() => onNavigate('dashboard')}
-              className="hover:text-[#2C1B57] transition-colors text-left relative py-1 group"
-            >
+            <button onClick={() => onNavigate('dashboard')} className="hover:text-[#2C1B57] transition-colors text-left relative py-1 group">
               Recruiter Console
               <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#42326E] transition-all group-hover:w-full" />
             </button>
           </div>
+
 
           {/* Action CTAs */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -228,11 +259,20 @@ export const LandingView: React.FC<LandingViewProps> = ({
               <span>Post a Job Free</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
-            <button type="button" onClick={() => setMobileNavOpen((open) => !open)} className="lg:hidden p-2 rounded-xl text-[#2C1B57] hover:bg-white" aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'} aria-expanded={mobileNavOpen}>
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen((open) => !open)}
+              className="lg:hidden p-2 rounded-xl text-[#2C1B57] hover:bg-white"
+              aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileNavOpen}
+            >
               {mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
+
+
+        {/* Mobile Nav Dropdown */}
         {mobileNavOpen && (
           <div className="lg:hidden border-t border-[#E8E3EF] bg-[#FCFCF7]/95 px-5 py-4 shadow-xl flex flex-col gap-1">
             {[['Platform', '#platform'], ['Showcase', '#showcase'], ['Comparison', '#comparison']].map(([label, href]) => (
@@ -245,22 +285,23 @@ export const LandingView: React.FC<LandingViewProps> = ({
         )}
       </nav>
 
-      {/* Hero Section — Wide, Apple-Style Cinematic Presentation */}
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* HERO SECTION                                */}
+      {/* ═══════════════════════════════════════════ */}
       <section
         ref={heroRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         className="relative pt-14 sm:pt-20 lg:pt-24 pb-28 sm:pb-32 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-16 items-center"
       >
-        {/* Left Column: Headline & Value Proposition */}
+        {/* Left Column */}
         <div className="lg:col-span-6 space-y-7 sm:space-y-8 relative z-10">
-          {/* Apple-style floating status pill */}
           <div className="inline-flex items-center gap-2.5 rounded-full border border-[#DAD1E8] bg-white/75 px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#42326E] shadow-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-500 landing-status-dot" />
             <span>Verified talent infrastructure</span>
           </div>
 
-          {/* Giant Apple-Style Title */}
           <h1 className="text-[clamp(2.9rem,5.1vw,4.75rem)] font-extrabold tracking-[-0.045em] text-[#2C1B57] leading-[1.04] max-w-[12ch]">
             Great hires start with <span className="text-[#7359B4]">certainty.</span>
           </h1>
@@ -269,7 +310,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
             Meet verified talent, see the evidence behind every profile, and move from first look to interview in one calm workspace.
           </p>
 
-          {/* Action Button Row */}
           <div className="flex flex-wrap items-center gap-3.5 pt-1">
             <button
               onClick={() => onNavigate('post-job')}
@@ -289,73 +329,58 @@ export const LandingView: React.FC<LandingViewProps> = ({
 
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-semibold text-[#49454F]">
             {['Verified profiles', 'No setup fee', 'Interview-ready talent'].map((item) => (
-              <span key={item} className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-[#5F8A72]" />{item}</span>
+              <span key={item} className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-[#5F8A72]" />{item}
+              </span>
             ))}
           </div>
 
-          {/* Social Proof Metric Triplets */}
           <div className="grid grid-cols-3 gap-3 sm:gap-6 pt-7 border-t border-[#DAD1E8] max-w-xl">
             <div>
-              <div className="text-xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight tabular-nums">
-                48 hrs
-              </div>
-              <div className="text-xs text-[#6F687A] font-medium mt-0.5">
-                Median time to shortlist
-              </div>
+              <div className="text-xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight tabular-nums">48 hrs</div>
+              <div className="text-xs text-[#6F687A] font-medium mt-0.5">Median time to shortlist</div>
             </div>
             <div>
-              <div className="text-xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight tabular-nums">
-                94.6%
-              </div>
-              <div className="text-xs text-[#6F687A] font-medium mt-0.5">
-                Audit pass fidelity
-              </div>
+              <div className="text-xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight tabular-nums">94.6%</div>
+              <div className="text-xs text-[#6F687A] font-medium mt-0.5">Audit pass fidelity</div>
             </div>
             <div>
-              <div className="text-xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight tabular-nums">
-                6,200+
-              </div>
-              <div className="text-xs text-[#6F687A] font-medium mt-0.5">
-                Companies hiring
-              </div>
+              <div className="text-xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight tabular-nums">6,200+</div>
+              <div className="text-xs text-[#6F687A] font-medium mt-0.5">Companies hiring</div>
             </div>
           </div>
         </div>
 
-        {/* Right Column: Apple-Grade Interactive Hardware/Software Mockup */}
+
+        {/* Right Column: Interactive Dashboard Mockup */}
         <div className="lg:col-span-6 relative landing-device-wrap">
           <span className="absolute -top-8 right-0 text-[10px] font-bold uppercase tracking-[0.16em] text-[#76698D]">Illustrative product preview</span>
-          {/* Main Device / Frame */}
+
           <div
             className="w-full bg-[#2C1B57] text-white rounded-3xl p-6 sm:p-7 shadow-[0_32px_80px_-20px_rgba(44,27,87,0.35)] relative overflow-hidden transition-transform duration-300 ease-out border border-white/15 ring-1 ring-black/10"
-            style={{
-              transform: `perspective(1100px) rotateY(${tilt.x}deg) rotateX(${tilt.y}deg)`,
-            }}
+            style={{ transform: `perspective(1100px) rotateY(${tilt.x}deg) rotateX(${tilt.y}deg)` }}
           >
-            {/* Ambient internal studio reflection glow */}
             <div className="absolute top-0 right-0 w-80 h-80 bg-radial from-[#B29CFE]/30 via-[#6E5B9A]/15 to-transparent blur-3xl pointer-events-none" />
             <div className="absolute -bottom-10 -left-10 w-64 h-64 bg-[#7CE0B0]/15 blur-3xl pointer-events-none" />
 
-            {/* Window Top Controls & Interactive Segment Switcher */}
+            {/* Window Controls + Logo */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10 mb-5">
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-[#FF5F56]" />
                 <span className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
                 <span className="w-3 h-3 rounded-full bg-[#27C93F]" />
-                <span className="ml-2 text-xs text-white/50 font-semibold tracking-wide">
+                <span className="ml-2 text-xs text-white/50 font-semibold tracking-wide flex items-center gap-1.5">
+                  <AppLogo className="w-4 h-4 rounded" />
                   Smile Jobs Recruiter OS
                 </span>
               </div>
 
-              {/* Interactive preview tabs */}
               <div className="flex items-center gap-1 bg-white/10 p-1 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setActivePreviewTab('pipeline')}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
-                    activePreviewTab === 'pipeline'
-                      ? 'bg-white text-[#2C1B57] shadow-xs'
-                      : 'text-white/70 hover:text-white'
+                    activePreviewTab === 'pipeline' ? 'bg-white text-[#2C1B57] shadow-xs' : 'text-white/70 hover:text-white'
                   }`}
                 >
                   Pipeline
@@ -364,9 +389,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   type="button"
                   onClick={() => setActivePreviewTab('audit')}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
-                    activePreviewTab === 'audit'
-                      ? 'bg-white text-[#2C1B57] shadow-xs'
-                      : 'text-white/70 hover:text-white'
+                    activePreviewTab === 'audit' ? 'bg-white text-[#2C1B57] shadow-xs' : 'text-white/70 hover:text-white'
                   }`}
                 >
                   Audit Scan
@@ -375,9 +398,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   type="button"
                   onClick={() => setActivePreviewTab('velocity')}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
-                    activePreviewTab === 'velocity'
-                      ? 'bg-white text-[#2C1B57] shadow-xs'
-                      : 'text-white/70 hover:text-white'
+                    activePreviewTab === 'velocity' ? 'bg-white text-[#2C1B57] shadow-xs' : 'text-white/70 hover:text-white'
                   }`}
                 >
                   Velocity
@@ -385,43 +406,32 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
             </div>
 
-            {/* Tab 1: Live Pipeline Preview */}
+            {/* Tab 1: Pipeline */}
             {activePreviewTab === 'pipeline' && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="grid grid-cols-3 gap-2.5">
                   <div className="bg-white/5 border border-white/10 p-3 rounded-2xl">
                     <div className="text-2xl font-extrabold text-white">124</div>
-                    <div className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">
-                      Verified Talent
-                    </div>
+                    <div className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">Verified Talent</div>
                   </div>
                   <div className="bg-white/5 border border-white/10 p-3 rounded-2xl">
                     <div className="text-2xl font-extrabold text-white">37</div>
-                    <div className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">
-                      Shortlisted
-                    </div>
+                    <div className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">Shortlisted</div>
                   </div>
                   <div className="bg-white/5 border border-white/10 p-3 rounded-2xl">
                     <div className="text-2xl font-extrabold text-[#E0D4FC]">9</div>
-                    <div className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">
-                      Interviews
-                    </div>
+                    <div className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">Interviews</div>
                   </div>
                 </div>
 
-                {/* 3 Active Pipeline Columns */}
                 <div className="grid grid-cols-[repeat(3,minmax(165px,1fr))] sm:grid-cols-3 gap-2.5 text-xs overflow-x-auto pb-2">
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 space-y-2">
-                    <div className="text-[10px] font-extrabold text-white/40 tracking-wider">
-                      APPLIED (18)
-                    </div>
+                    <div className="text-[10px] font-extrabold text-white/40 tracking-wider">APPLIED (18)</div>
                     <div className="bg-white text-[#2C1B57] p-2.5 rounded-xl shadow-xs">
                       <div className="font-extrabold text-[11px]">Maya Chen</div>
                       <div className="text-[9px] text-[#6F687A]">Senior Product Designer</div>
                       <div className="mt-1.5 flex items-center justify-between text-[9px] pt-1 border-t border-[#E8E3EF]">
-                        <span className="text-emerald-700 font-bold flex items-center gap-0.5">
-                          <Check className="w-2.5 h-2.5" /> ID Verified
-                        </span>
+                        <span className="text-emerald-700 font-bold flex items-center gap-0.5"><Check className="w-2.5 h-2.5" /> ID Verified</span>
                         <span className="font-extrabold text-[#42326E]">94%</span>
                       </div>
                     </div>
@@ -429,41 +439,31 @@ export const LandingView: React.FC<LandingViewProps> = ({
                       <div className="font-extrabold text-[11px]">Arjun Rao</div>
                       <div className="text-[9px] text-[#6F687A]">Staff Distributed Eng.</div>
                       <div className="mt-1.5 flex items-center justify-between text-[9px] pt-1 border-t border-[#E8E3EF]">
-                        <span className="text-emerald-700 font-bold flex items-center gap-0.5">
-                          <Check className="w-2.5 h-2.5" /> Cleared
-                        </span>
+                        <span className="text-emerald-700 font-bold flex items-center gap-0.5"><Check className="w-2.5 h-2.5" /> Cleared</span>
                         <span className="font-extrabold text-[#42326E]">91%</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 space-y-2">
-                    <div className="text-[10px] font-extrabold text-white/40 tracking-wider">
-                      SCREENING (7)
-                    </div>
+                    <div className="text-[10px] font-extrabold text-white/40 tracking-wider">SCREENING (7)</div>
                     <div className="bg-white text-[#2C1B57] p-2.5 rounded-xl shadow-xs ring-2 ring-[#B29CFE]">
                       <div className="font-extrabold text-[11px]">Leo Fischer</div>
                       <div className="text-[9px] text-[#6F687A]">Growth Lead (SaaS)</div>
                       <div className="mt-1.5 flex items-center justify-between text-[9px] pt-1 border-t border-[#E8E3EF]">
-                        <span className="text-emerald-700 font-bold flex items-center gap-0.5">
-                          <Check className="w-2.5 h-2.5" /> Cleared
-                        </span>
+                        <span className="text-emerald-700 font-bold flex items-center gap-0.5"><Check className="w-2.5 h-2.5" /> Cleared</span>
                         <span className="font-extrabold text-[#42326E]">89%</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 space-y-2">
-                    <div className="text-[10px] font-extrabold text-white/40 tracking-wider">
-                      INTERVIEW (9)
-                    </div>
+                    <div className="text-[10px] font-extrabold text-white/40 tracking-wider">INTERVIEW (9)</div>
                     <div className="bg-white text-[#2C1B57] p-2.5 rounded-xl shadow-xs">
                       <div className="font-extrabold text-[11px]">Priya Nair</div>
                       <div className="text-[9px] text-[#6F687A]">Senior Data Analyst</div>
                       <div className="mt-1.5 flex items-center justify-between text-[9px] pt-1 border-t border-[#E8E3EF]">
-                        <span className="text-amber-700 font-bold flex items-center gap-0.5">
-                          <Clock className="w-2.5 h-2.5" /> Thu 2:30 PM
-                        </span>
+                        <span className="text-amber-700 font-bold flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> Thu 2:30 PM</span>
                         <span className="font-extrabold text-[#42326E]">96%</span>
                       </div>
                     </div>
@@ -472,7 +472,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
             )}
 
-            {/* Tab 2: 4-Point Audit Preview */}
+            {/* Tab 2: Audit */}
             {activePreviewTab === 'audit' && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="bg-white/10 p-3.5 rounded-2xl border border-white/15 flex items-center justify-between">
@@ -481,49 +481,33 @@ export const LandingView: React.FC<LandingViewProps> = ({
                       <ShieldCheck className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="font-extrabold text-sm text-white">Priya Nair • Credential Dossier</div>
-                      <div className="text-xs text-white/70">Authenticated via Indian UIDAI & EPFO Registries</div>
+                      <div className="font-extrabold text-sm text-white">Priya Nair - Credential Dossier</div>
+                      <div className="text-xs text-white/70">Authenticated via Indian UIDAI and EPFO Registries</div>
                     </div>
                   </div>
-                  <span className="text-xs font-extrabold px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30">
-                    100% Passed
-                  </span>
+                  <span className="text-xs font-extrabold px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30">100% Passed</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div>
-                      <div className="font-bold text-white">Government ID</div>
-                      <div className="text-[10px] text-white/60">Aadhaar verified via OTP</div>
+                  {[
+                    { title: 'Government ID', desc: 'Aadhaar verified via OTP' },
+                    { title: 'Phone Authentication', desc: 'Carrier active 5+ years' },
+                    { title: 'Work History & Tenure', desc: 'Razorpay payroll validated' },
+                    { title: 'Degree Accreditation', desc: 'B.Tech IIT Bombay (2020)' },
+                  ].map((item) => (
+                    <div key={item.title} className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center gap-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div>
+                        <div className="font-bold text-white">{item.title}</div>
+                        <div className="text-[10px] text-white/60">{item.desc}</div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div>
-                      <div className="font-bold text-white">Phone Authentication</div>
-                      <div className="text-[10px] text-white/60">Carrier active 5+ years</div>
-                    </div>
-                  </div>
-                  <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div>
-                      <div className="font-bold text-white">Work History & Tenure</div>
-                      <div className="text-[10px] text-white/60">Razorpay payroll validated</div>
-                    </div>
-                  </div>
-                  <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div>
-                      <div className="font-bold text-white">Degree Accreditation</div>
-                      <div className="text-[10px] text-white/60">B.Tech IIT Bombay (2020)</div>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Tab 3: Velocity Telemetry */}
+            {/* Tab 3: Velocity */}
             {activePreviewTab === 'velocity' && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="grid grid-cols-2 gap-3">
@@ -537,9 +521,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
                     <div className="text-xs text-white/60 uppercase font-semibold">Offer Close Rate</div>
                     <div className="text-3xl font-extrabold text-white mt-1">88.2%</div>
-                    <div className="text-[11px] text-emerald-400 mt-2 font-bold">
-                      18 offers signed this quarter
-                    </div>
+                    <div className="text-[11px] text-emerald-400 mt-2 font-bold">18 offers signed this quarter</div>
                   </div>
                 </div>
 
@@ -555,7 +537,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
             )}
 
-            {/* Launch Button at Bottom */}
             <button
               onClick={() => onNavigate('dashboard')}
               className="mt-5 w-full py-3 bg-gradient-to-r from-[#42326E] via-[#5A4590] to-[#795EB5] border border-white/20 text-white rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 hover:opacity-95 shadow-md transition-all"
@@ -565,7 +546,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </button>
           </div>
 
-          {/* Floating badge 1: Identity Verified */}
+          {/* Floating Badges */}
           <div className="absolute -top-4 -left-6 apple-glass rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 animate-float-slow hidden sm:flex border border-white/80">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
               <ShieldCheck className="w-5 h-5" />
@@ -576,7 +557,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
           </div>
 
-          {/* Floating badge 2: Momentum */}
           <div className="absolute -bottom-5 -right-6 apple-glass rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 animate-float-delayed hidden sm:flex border border-white/80">
             <div className="w-10 h-10 rounded-xl bg-[#EDE6FA] text-[#42326E] flex items-center justify-center">
               <TrendingUp className="w-5 h-5" />
@@ -589,6 +569,10 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* SOCIAL PROOF STRIP                          */}
+      {/* ═══════════════════════════════════════════ */}
       <section className="border-y border-[#E8E3EF] bg-white/85 py-8" aria-label="Teams Smile Jobs is designed for">
         <div className="max-w-[1440px] mx-auto px-5 sm:px-10 lg:px-14 xl:px-20 flex flex-col md:flex-row md:items-center gap-5 md:gap-12">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#6F687A] shrink-0">Made for teams building what comes next</p>
@@ -598,10 +582,14 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* STORY SECTION                               */}
+      {/* ═══════════════════════════════════════════ */}
       <section className="landing-story py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-12 lg:gap-20 items-center">
           <div className="max-w-lg">
-            <h2 className="text-4xl sm:text-5xl font-extrabold tracking-[-0.04em] leading-[1.1] text-[#2C1B57]">Hiring shouldn’t begin with doubt.</h2>
+            <h2 className="text-4xl sm:text-5xl font-extrabold tracking-[-0.04em] leading-[1.1] text-[#2C1B57]">Hiring should not begin with doubt.</h2>
             <p className="mt-6 text-base sm:text-lg text-[#49454F] leading-relaxed">When each candidate comes with clear signals, your team can spend less time checking claims and more time meeting people.</p>
             <button onClick={() => onNavigate('candidates')} className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-[#42326E] hover:gap-3 transition-all">See the talent directory <ArrowRight className="h-4 w-4" /></button>
           </div>
@@ -625,114 +613,121 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* SHOWCASE SECTION                            */}
+      {/* ═══════════════════════════════════════════ */}
       <section id="showcase" className="landing-showcase py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 w-full bg-[#281A4F] text-white">
         <div className="max-w-[1440px] mx-auto">
-        <div className="max-w-3xl mb-12 space-y-4">
-          <h2 className="text-4xl sm:text-5xl font-extrabold text-white tracking-[-0.04em] leading-[1.1]">
-            The whole hiring picture, in focus.
-          </h2>
-          <p className="text-base sm:text-lg text-[#D9D0EC] leading-relaxed">
-            Explore the signals and tools that bring better decisions into one workspace.
-          </p>
-        </div>
-
-        {/* Interactive 4-Way Segment Buttons */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-5 landing-tabs" role="tablist" aria-label="Platform capabilities">
-          {showcaseItems.map((item, idx) => {
-            const Icon = item.icon;
-            const isSelected = activeShowcaseTab === idx;
-            return (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setActiveShowcaseTab(idx)}
-                role="tab"
-                aria-selected={isSelected}
-                className={`px-5 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 whitespace-nowrap border ${
-                  isSelected
-                    ? 'bg-white text-[#2C1B57] border-white shadow-md'
-                    : 'bg-white/5 text-[#E0D4FC] border-white/15 hover:border-[#B29CFE] hover:bg-white/10'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{item.title}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Selected Showcase Feature Card */}
-        <div key={activeShowcaseTab} role="tabpanel" className="landing-feature-panel bg-[#FCFCF7] rounded-[2rem] p-6 sm:p-10 lg:p-12 border border-white/20 shadow-[0_30px_90px_-35px_rgba(0,0,0,.5)] grid grid-cols-1 lg:grid-cols-12 gap-10 items-center text-[#29233A]">
-          <div className="lg:col-span-6 space-y-5">
-            <span className="text-xs font-extrabold px-3 py-1 bg-[#EDE6FA] text-[#42326E] rounded-full inline-block">
-              {showcaseItems[activeShowcaseTab].badge}
-            </span>
-            <h3 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57]">
-              {showcaseItems[activeShowcaseTab].title}
-            </h3>
-            <p className="text-sm font-semibold text-[#42326E]">
-              {showcaseItems[activeShowcaseTab].subtitle}
+          <div className="max-w-3xl mb-12 space-y-4">
+            <h2 className="text-4xl sm:text-5xl font-extrabold text-white tracking-[-0.04em] leading-[1.1]">
+              The whole hiring picture, in focus.
+            </h2>
+            <p className="text-base sm:text-lg text-[#D9D0EC] leading-relaxed">
+              Explore the signals and tools that bring better decisions into one workspace.
             </p>
-            <p className="text-sm text-[#49454F] leading-relaxed">
-              {showcaseItems[activeShowcaseTab].description}
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-5 border-t border-[#E8E3EF]">
-              {showcaseItems[activeShowcaseTab].metrics.map((m, i) => (
-                <div key={i} className="py-2 pr-2">
-                  <div className="text-[10px] text-[#6F687A] font-semibold">{m.label}</div>
-                  <div className="text-sm font-extrabold text-[#2C1B57] mt-0.5">{m.value}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="pt-2">
-              <button
-                onClick={() => onNavigate('dashboard')}
-                className="px-6 py-2.5 bg-[#42326E] hover:bg-[#322554] text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5"
-              >
-                <span>Experience this in Recruiter Portal</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
           </div>
 
-          <div className="lg:col-span-6 bg-[#2C1B57] rounded-2xl p-5 sm:p-7 text-white relative overflow-hidden shadow-[0_20px_40px_-20px_rgba(44,27,87,.5)] min-h-[300px]">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
-              <span className="text-xs font-bold text-white/70">{showcaseItems[activeShowcaseTab].subtitle}</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-5 landing-tabs" role="tablist" aria-label="Platform capabilities">
+            {showcaseItems.map((item, idx) => {
+              const Icon = item.icon;
+              const isSelected = activeShowcaseTab === idx;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setActiveShowcaseTab(idx)}
+                  role="tab"
+                  aria-selected={isSelected}
+                  className={`px-5 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-2.5 whitespace-nowrap border ${
+                    isSelected
+                      ? 'bg-white text-[#2C1B57] border-white shadow-md'
+                      : 'bg-white/5 text-[#E0D4FC] border-white/15 hover:border-[#B29CFE] hover:bg-white/10'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{item.title}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div key={activeShowcaseTab} role="tabpanel" className="landing-feature-panel bg-[#FCFCF7] rounded-[2rem] p-6 sm:p-10 lg:p-12 border border-white/20 shadow-[0_30px_90px_-35px_rgba(0,0,0,.5)] grid grid-cols-1 lg:grid-cols-12 gap-10 items-center text-[#29233A]">
+            <div className="lg:col-span-6 space-y-5">
+              <span className="text-xs font-extrabold px-3 py-1 bg-[#EDE6FA] text-[#42326E] rounded-full inline-block">
+                {showcaseItems[activeShowcaseTab].badge}
+              </span>
+              <h3 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57]">
+                {showcaseItems[activeShowcaseTab].title}
+              </h3>
+              <p className="text-sm font-semibold text-[#42326E]">
+                {showcaseItems[activeShowcaseTab].subtitle}
+              </p>
+              <p className="text-sm text-[#49454F] leading-relaxed">
+                {showcaseItems[activeShowcaseTab].description}
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-5 border-t border-[#E8E3EF]">
+                {showcaseItems[activeShowcaseTab].metrics.map((m, i) => (
+                  <div key={i} className="py-2 pr-2">
+                    <div className="text-[10px] text-[#6F687A] font-semibold">{m.label}</div>
+                    <div className="text-sm font-extrabold text-[#2C1B57] mt-0.5">{m.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={() => onNavigate('dashboard')}
+                  className="px-6 py-2.5 bg-[#42326E] hover:bg-[#322554] text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+                >
+                  <span>Experience this in Recruiter Portal</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {showcaseItems[activeShowcaseTab].metrics.map((metric, index) => (
-                <div key={metric.label} className="p-4 bg-white/[.08] rounded-xl border border-white/10 flex items-center gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#B29CFE]/20 text-[#E0D4FC] text-xs font-bold">0{index + 1}</span>
-                  <div className="min-w-0 flex-1"><span className="block text-xs text-[#C9BEE3]">{metric.label}</span><strong className="block text-sm text-white">{metric.value}</strong></div>
-                  <CheckCircle2 className="h-4 w-4 text-[#7CE0B0] shrink-0" />
-                </div>
-              ))}
+            <div className="lg:col-span-6 bg-[#2C1B57] rounded-2xl p-5 sm:p-7 text-white relative overflow-hidden shadow-[0_20px_40px_-20px_rgba(44,27,87,.5)] min-h-[300px]">
+              <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+                <span className="text-xs font-bold text-white/70">{showcaseItems[activeShowcaseTab].subtitle}</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              </div>
+
+              <div className="space-y-3">
+                {showcaseItems[activeShowcaseTab].metrics.map((metric, index) => (
+                  <div key={metric.label} className="p-4 bg-white/[.08] rounded-xl border border-white/10 flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#B29CFE]/20 text-[#E0D4FC] text-xs font-bold">0{index + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-xs text-[#C9BEE3]">{metric.label}</span>
+                      <strong className="block text-sm text-white">{metric.value}</strong>
+                    </div>
+                    <CheckCircle2 className="h-4 w-4 text-[#7CE0B0] shrink-0" />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* PLATFORM FEATURES BENTO                     */}
+      {/* ═══════════════════════════════════════════ */}
       <section id="platform" className="py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="max-w-3xl mb-14 space-y-4">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#2C1B57] tracking-tight">
             One workspace. Every decision in view.
           </h2>
           <p className="text-base text-[#49454F] leading-relaxed">
-            Smile Jobs replaces fragmented spreadsheets, unverified resumes, and disjointed
-            calendars with one high-precision platform.
+            Smile Jobs replaces fragmented spreadsheets, unverified resumes, and disjointed calendars with one high-precision platform.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {/* Card 1: 100% Verified Profiles (Luxury Dark Bento) */}
+          {/* Card 1: Verified Profiles */}
           <div className="md:col-span-2 lg:col-span-1 bg-[#2C1B57] text-white p-7 sm:p-8 rounded-3xl flex flex-col justify-between shadow-xl relative overflow-hidden group apple-card-hover border border-white/10">
             <div className="absolute top-0 right-0 w-64 h-64 bg-radial from-[#B29CFE]/20 to-transparent blur-2xl pointer-events-none" />
-
             <div>
               <div className="w-12 h-12 rounded-2xl bg-white/10 text-white flex items-center justify-center mb-6">
                 <ShieldCheck className="w-6 h-6 text-[#7CE0B0]" />
@@ -744,100 +739,102 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
             <div className="mt-8 rounded-2xl bg-white/10 border border-white/10 p-4 space-y-3">
               {['Identity check', 'Phone verified', 'Work history', 'Degree match'].map((item) => (
-                <div key={item} className="flex items-center justify-between text-xs font-semibold text-white/90"><span>{item}</span><CheckCircle2 className="w-4 h-4 text-[#7CE0B0]" /></div>
+                <div key={item} className="flex items-center justify-between text-xs font-semibold text-white/90">
+                  <span>{item}</span><CheckCircle2 className="w-4 h-4 text-[#7CE0B0]" />
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Card 2: Smart Candidate Search */}
+          {/* Card 2: Smart Search */}
           <div className="bg-white p-8 rounded-3xl border border-[#E8E3EF] shadow-xs apple-card-hover flex flex-col justify-between">
             <div>
               <div className="w-12 h-12 rounded-2xl bg-[#EDE6FA] text-[#42326E] flex items-center justify-center mb-6">
                 <Search className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">
-                Smart Candidate Search
-              </h3>
+              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">Smart Candidate Search</h3>
               <p className="text-sm text-[#49454F] leading-relaxed">
-                Filter by technical competency, verified years of experience, current location,
-                and immediate joining availability to find candidates who truly fit.
+                Filter by technical competency, verified years of experience, current location, and immediate joining availability to find candidates who truly fit.
               </p>
             </div>
-            <div className="mt-6 rounded-2xl border border-[#E8E3EF] bg-[#FCFCF7] p-3 flex items-center gap-2 text-xs font-medium text-[#6F687A]"><Search className="w-4 h-4" /> Search skills, role or location</div>
-            <div className="flex flex-wrap gap-2 mt-3"><span className="text-[11px] font-bold text-[#42326E] bg-[#EDE6FA] px-2.5 py-1 rounded-full">React</span><span className="text-[11px] font-bold text-[#42326E] bg-[#EDE6FA] px-2.5 py-1 rounded-full">5+ years</span><span className="text-[11px] font-bold text-[#42326E] bg-[#EDE6FA] px-2.5 py-1 rounded-full">Remote</span></div>
-            <button
-              onClick={() => onNavigate('candidates')}
-              className="mt-6 text-xs font-bold text-[#42326E] flex items-center gap-1.5 hover:gap-2 transition-all self-start"
-            >
+            <div className="mt-6 rounded-2xl border border-[#E8E3EF] bg-[#FCFCF7] p-3 flex items-center gap-2 text-xs font-medium text-[#6F687A]">
+              <Search className="w-4 h-4" /> Search skills, role or location
+            </div>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <span className="text-[11px] font-bold text-[#42326E] bg-[#EDE6FA] px-2.5 py-1 rounded-full">React</span>
+              <span className="text-[11px] font-bold text-[#42326E] bg-[#EDE6FA] px-2.5 py-1 rounded-full">5+ years</span>
+              <span className="text-[11px] font-bold text-[#42326E] bg-[#EDE6FA] px-2.5 py-1 rounded-full">Remote</span>
+            </div>
+            <button onClick={() => onNavigate('candidates')} className="mt-6 text-xs font-bold text-[#42326E] flex items-center gap-1.5 hover:gap-2 transition-all self-start">
               Browse candidate directory <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Card 3: Drag & Drop Kanban */}
+          {/* Card 3: Kanban Pipeline */}
           <div className="bg-white p-8 rounded-3xl border border-[#E8E3EF] shadow-xs apple-card-hover flex flex-col justify-between">
             <div>
               <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mb-6">
                 <Zap className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">
-                Drag & Drop Pipeline
-              </h3>
+              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">Drag & Drop Pipeline</h3>
               <p className="text-sm text-[#49454F] leading-relaxed">
-                Move talent seamlessly across 6 stages: Applied, Screening, Shortlisted,
-                Interview, Selected, and Hired with instant stage notifications.
+                Move talent seamlessly across 6 stages: Applied, Screening, Shortlisted, Interview, Selected, and Hired with instant stage notifications.
               </p>
             </div>
             <div className="mt-6 grid grid-cols-3 gap-2 text-[10px] font-bold text-[#6F687A]">
-              {['Applied', 'Shortlisted', 'Interview'].map((stage, index) => <div key={stage} className="rounded-xl bg-[#F7F4FA] border border-[#E8E3EF] p-2"><span className="block mb-2">{stage}</span><span className="block h-9 rounded-lg bg-white border border-[#E8E3EF] px-1.5 py-2 text-[#42326E] truncate">{['Maya C.', 'Leo F.', 'Priya N.'][index]}</span></div>)}
+              {['Applied', 'Shortlisted', 'Interview'].map((stage, index) => (
+                <div key={stage} className="rounded-xl bg-[#F7F4FA] border border-[#E8E3EF] p-2">
+                  <span className="block mb-2">{stage}</span>
+                  <span className="block h-9 rounded-lg bg-white border border-[#E8E3EF] px-1.5 py-2 text-[#42326E] truncate">
+                    {['Maya C.', 'Leo F.', 'Priya N.'][index]}
+                  </span>
+                </div>
+              ))}
             </div>
-            <button
-              onClick={() => onNavigate('dashboard')}
-              className="mt-6 text-xs font-bold text-[#42326E] flex items-center gap-1.5 hover:gap-2 transition-all self-start"
-            >
+            <button onClick={() => onNavigate('dashboard')} className="mt-6 text-xs font-bold text-[#42326E] flex items-center gap-1.5 hover:gap-2 transition-all self-start">
               View Kanban pipeline <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Card 4: Guided 6-Step Job Posting */}
+          {/* Card 4: Job Posting */}
           <div className="bg-white p-8 rounded-3xl border border-[#E8E3EF] shadow-xs apple-card-hover flex flex-col justify-between">
             <div>
               <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center mb-6">
                 <Briefcase className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">
-                Guided 6-Step Job Posting
-              </h3>
+              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">Guided 6-Step Job Posting</h3>
               <p className="text-sm text-[#49454F] leading-relaxed">
-                Create transparent listings with clear compensation, perks, work mode, and
-                must-have requirements in under 5 minutes with live preview.
+                Create transparent listings with clear compensation, perks, work mode, and must-have requirements in under 5 minutes with live preview.
               </p>
             </div>
             <div className="mt-6 flex items-center justify-between text-[10px] font-bold text-[#6F687A]">
-              {[1, 2, 3, 4, 5, 6].map((step) => <span key={step} className={`flex h-7 w-7 items-center justify-center rounded-full border ${step < 4 ? 'border-[#42326E] bg-[#42326E] text-white' : 'border-[#DAD1E8] bg-white'}`}>{step}</span>)}
+              {[1, 2, 3, 4, 5, 6].map((step) => (
+                <span key={step} className={`flex h-7 w-7 items-center justify-center rounded-full border ${step < 4 ? 'border-[#42326E] bg-[#42326E] text-white' : 'border-[#DAD1E8] bg-white'}`}>
+                  {step}
+                </span>
+              ))}
             </div>
-            <button
-              onClick={() => onNavigate('post-job')}
-              className="mt-6 text-xs font-bold text-[#42326E] flex items-center gap-1.5 hover:gap-2 transition-all self-start"
-            >
+            <button onClick={() => onNavigate('post-job')} className="mt-6 text-xs font-bold text-[#42326E] flex items-center gap-1.5 hover:gap-2 transition-all self-start">
               Create new job listing <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Card 5: Velocity & Conversion Metrics */}
+          {/* Card 5: Metrics */}
           <div className="md:col-span-2 bg-white p-7 sm:p-8 rounded-3xl border border-[#E8E3EF] shadow-xs apple-card-hover flex flex-col justify-between">
             <div>
               <div className="w-12 h-12 rounded-2xl bg-[#EDE6FA] text-[#42326E] flex items-center justify-center mb-6">
                 <BarChart3 className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">
-                Recruitment Velocity & Conversion Metrics
-              </h3>
+              <h3 className="text-xl font-bold text-[#2C1B57] mb-2 tracking-tight">Recruitment Velocity & Conversion Metrics</h3>
               <p className="text-sm text-[#49454F] leading-relaxed">
-                Track time-to-hire across departments, conversion rates through each stage,
-                and interview completion benchmarks to optimize your hiring spend.
+                Track time-to-hire across departments, conversion rates through each stage, and interview completion benchmarks to optimize your hiring spend.
               </p>
             </div>
-            <div className="mt-6 flex items-end gap-2 h-20" aria-hidden="true">{[35, 52, 45, 66, 54, 72, 83, 69, 91, 78, 100, 88].map((height, index) => <div key={index} className="flex-1 rounded-t-md bg-gradient-to-t from-[#42326E] to-[#B29CFE] opacity-75" style={{ height: `${height}%` }} />)}</div>
+            <div className="mt-6 flex items-end gap-2 h-20" aria-hidden="true">
+              {[35, 52, 45, 66, 54, 72, 83, 69, 91, 78, 100, 88].map((height, index) => (
+                <div key={index} className="flex-1 rounded-t-md bg-gradient-to-t from-[#42326E] to-[#B29CFE] opacity-75" style={{ height: `${height}%` }} />
+              ))}
+            </div>
             <div className="pt-6 grid grid-cols-3 gap-2 sm:gap-4 border-t border-[#EFEAF6] mt-4">
               <div className="bg-[#FCFCF7] p-2 sm:p-3 rounded-2xl border border-[#E8E3EF]">
                 <div className="text-xl font-extrabold text-[#2C1B57]">18 Days</div>
@@ -856,19 +853,20 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* TALENT PREVIEW SECTION                      */}
+      {/* ═══════════════════════════════════════════ */}
       <section className="py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 bg-[#F5F1FA] border-y border-[#E8E3EF]">
         <div className="max-w-[1440px] mx-auto w-full space-y-8">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-[#2C1B57] tracking-tight">
-                Talent worth a closer look.
-              </h2>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-[#2C1B57] tracking-tight">Talent worth a closer look.</h2>
               <p className="text-sm text-[#49454F] mt-1">
                 {authUser ? 'Explore candidates in your recruiter workspace.' : 'Preview candidate profiles. Sign in to access your talent directory.'}
               </p>
             </div>
 
-            {/* Filter buttons */}
             <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-white rounded-xl border border-[#E8E3EF]">
               {(['all', 'Design', 'Engineering', 'Analytics', 'Product'] as const).map((dept) => (
                 <button
@@ -876,9 +874,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   onClick={() => setTalentRoleFilter(dept)}
                   aria-pressed={talentRoleFilter === dept}
                   className={`px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all ${
-                    talentRoleFilter === dept
-                      ? 'bg-[#2C1B57] text-white shadow-xs'
-                      : 'text-[#49454F] hover:bg-gray-100'
+                    talentRoleFilter === dept ? 'bg-[#2C1B57] text-white shadow-xs' : 'text-[#49454F] hover:bg-gray-100'
                   }`}
                 >
                   {dept}
@@ -888,73 +884,80 @@ export const LandingView: React.FC<LandingViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {displayTalent.slice(0, 3).map((candidate) => (
-              <button
-                key={candidate.id}
-                onClick={() => onSelectCandidate(candidate)}
-                className="bg-white p-6 sm:p-7 rounded-3xl border border-[#E8E3EF] shadow-xs apple-card-hover cursor-pointer group flex flex-col justify-between text-left min-w-0"
-                aria-label={`View ${candidate.name}'s profile`}
-              >
-                <div>
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3.5">
-                      <div
-                        className="w-13 h-13 rounded-2xl flex items-center justify-center text-white font-extrabold text-base shadow-sm shrink-0"
-                        style={{ backgroundColor: candidate.avatarBg }}
-                      >
-                        {candidate.name
-                          .split(' ')
-                          .map((p) => p[0])
-                          .join('')}
-                      </div>
-                      <div>
-                        <div className="font-extrabold text-base text-[#2C1B57] group-hover:text-[#42326E] transition-colors flex items-center gap-1.5">
-                          {candidate.name}
-                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            {displayTalent.slice(0, 3).map((candidate) => {
+              const isPremium = candidate.matchScore >= 90;
+              return (
+                <button
+                  key={candidate.id}
+                  onClick={() => onSelectCandidate(candidate)}
+                  className={`relative bg-white p-6 sm:p-7 rounded-3xl shadow-xs transition-all text-left flex flex-col justify-between overflow-hidden group ${
+                    isPremium ? 'border-2 border-amber-300 hover:shadow-lg' : 'border border-[#E8E3EF] hover:border-[#B29CFE]'
+                  }`}
+                  aria-label={`View ${candidate.name} profile`}
+                >
+                  {isPremium && (
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-yellow-300 via-amber-500 to-yellow-300" />
+                  )}
+
+                  <div>
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3.5">
+                        <div
+                          className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-extrabold text-lg shadow-sm shrink-0"
+                          style={{ backgroundColor: candidate.avatarBg }}
+                        >
+                          {getInitials(candidate.name)}
                         </div>
-                        <div className="text-xs text-[#6F687A]">{candidate.role}</div>
+                        <div>
+                          <div className="font-extrabold text-base text-[#2C1B57] group-hover:text-[#42326E] transition-colors flex items-center gap-1.5">
+                            {candidate.name}
+                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div className="text-xs text-[#6F687A]">{candidate.role}</div>
+                        </div>
                       </div>
+
+                      {isPremium ? (
+                        <div className="flex flex-col items-end shrink-0 pl-2">
+                          <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-700 text-[9px] font-extrabold px-2 py-0.5 rounded-lg shadow-xs whitespace-nowrap mb-1">
+                            <Sparkles className="w-3 h-3 text-amber-500" /> Top Match
+                          </span>
+                          <strong className="text-2xl leading-none font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-orange-600 tabular-nums">{candidate.matchScore}%</strong>
+                        </div>
+                      ) : (
+                        <span className="text-right shrink-0 pl-2">
+                          <strong className="block text-2xl leading-none font-extrabold text-[#42326E] tabular-nums">{candidate.matchScore}%</strong>
+                          <span className="text-[10px] font-bold text-[#6F687A]">match</span>
+                        </span>
+                      )}
                     </div>
-                    <span className="text-right shrink-0 pl-2">
-                      <strong className="block text-2xl leading-none font-extrabold text-[#42326E] tabular-nums">{candidate.matchScore}%</strong>
-                      <span className="text-[10px] font-bold text-[#6F687A]">match</span>
+
+                    <p className="text-xs text-[#49454F] line-clamp-2 mb-4 leading-relaxed font-normal">{candidate.bio}</p>
+
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {candidate.skills.slice(0, 3).map((s) => (
+                        <span key={s} className="text-[11px] font-semibold px-2 py-0.5 bg-[#FCFCF7] border border-[#E8E3EF] rounded-md text-[#49454F]">{s}</span>
+                      ))}
+                      {candidate.skills.length > 3 && (
+                        <span className="text-[11px] font-semibold text-[#6F687A] px-1 py-0.5">+{candidate.skills.length - 3} more</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-[#EFEAF6] flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="text-[#6F687A] flex items-center gap-1 font-medium">
+                      <MapPin className="w-3.5 h-3.5 text-[#42326E]" /> {candidate.location}
                     </span>
+                    <span className="font-extrabold text-[#C58A3A]">{candidate.salaryExpected} exp.</span>
                   </div>
-
-                  <p className="text-xs text-[#49454F] line-clamp-2 mb-4 leading-relaxed font-normal">
-                    {candidate.bio}
-                  </p>
-
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {candidate.skills.slice(0, 3).map((s) => (
-                      <span
-                        key={s}
-                        className="text-[11px] font-semibold px-2 py-0.5 bg-[#FCFCF7] border border-[#E8E3EF] rounded-md text-[#49454F]"
-                      >
-                        {s}
-                      </span>
-                    ))}
-                    {candidate.skills.length > 3 && (
-                      <span className="text-[11px] font-semibold text-[#6F687A] px-1 py-0.5">
-                        +{candidate.skills.length - 3} more
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-[#EFEAF6] flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <span className="text-[#6F687A] flex items-center gap-1 font-medium">
-                    <MapPin className="w-3.5 h-3.5 text-[#42326E]" />
-                    {candidate.location}
+                  <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-[#42326E] group-hover:gap-2.5 transition-all">
+                    View profile <ArrowRight className="h-3.5 w-3.5" />
                   </span>
-                  <span className="font-extrabold text-[#C58A3A]">
-                    {candidate.salaryExpected} exp.
-                  </span>
-                </div>
-                <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-[#42326E] group-hover:gap-2.5 transition-all">View profile <ArrowRight className="h-3.5 w-3.5" /></span>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
+
           {displayTalent.length === 0 && (
             <div className="rounded-3xl border border-[#DAD1E8] bg-white p-8 sm:p-12 text-center">
               <Search className="h-7 w-7 text-[#7359B4] mx-auto mb-4" />
@@ -965,25 +968,21 @@ export const LandingView: React.FC<LandingViewProps> = ({
           )}
 
           <div className="flex justify-center pt-2">
-            <button
-              onClick={() => onNavigate('candidates')}
-              className="px-6 py-3 bg-white border border-[#E8E3EF] hover:border-[#B29CFE] text-xs font-bold text-[#2C1B57] rounded-xl shadow-xs transition-all flex items-center gap-2"
-            >
-              <span>Explore all pre-vetted candidates</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+            <button onClick={() => onNavigate('candidates')} className="px-6 py-3 bg-white border border-[#E8E3EF] hover:border-[#B29CFE] text-xs font-bold text-[#2C1B57] rounded-xl shadow-xs transition-all flex items-center gap-2">
+              <span>Explore all pre-vetted candidates</span><ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* COMPARISON TABLE                            */}
+      {/* ═══════════════════════════════════════════ */}
       <section id="comparison" className="py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-3">
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#2C1B57] tracking-tight">
-            A clearer way to move forward.
-          </h2>
-          <p className="text-base text-[#49454F]">
-            The old way of recruiting wastes hundreds of hours on unverified claims and scheduling gymnastics.
-          </p>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#2C1B57] tracking-tight">A clearer way to move forward.</h2>
+          <p className="text-base text-[#49454F]">The old way of recruiting wastes hundreds of hours on unverified claims and scheduling gymnastics.</p>
         </div>
 
         <div className="bg-white rounded-3xl border border-[#E8E3EF] shadow-lg overflow-hidden max-w-5xl mx-auto">
@@ -995,39 +994,14 @@ export const LandingView: React.FC<LandingViewProps> = ({
 
           <div className="divide-y divide-[#EFEAF6] text-xs">
             {[
-              {
-                feature: 'Candidate Verification',
-                traditional: 'Self-reported resume claims (High fraud)',
-                smileJobs: 'Government ID, EPFO Tax & Degree Audited',
-              },
-              {
-                feature: 'Average Time to Shortlist',
-                traditional: '14 – 21 Days across spreadsheets',
-                smileJobs: 'Under 48 Hours with instant pipeline',
-              },
-              {
-                feature: 'Credential Reliability',
-                traditional: '12% – 18% falsified experience',
-                smileJobs: '0% Falsehood tolerance with cryptographic seal',
-              },
-              {
-                feature: 'Interview Scheduling',
-                traditional: '5 to 10 email exchanges per candidate',
-                smileJobs: '1-click Cal/Meet/Zoom panel booking',
-              },
-              {
-                feature: 'Cost per Verified Hire',
-                traditional: '₹45,000 – ₹90,000 (Agency markup 15%)',
-                smileJobs: '₹12,400 flat unified subscription',
-              },
+              { feature: 'Candidate Verification', traditional: 'Self-reported resume claims (High fraud)', smileJobs: 'Government ID, EPFO Tax & Degree Audited' },
+              { feature: 'Average Time to Shortlist', traditional: '14 - 21 Days across spreadsheets', smileJobs: 'Under 48 Hours with instant pipeline' },
+              { feature: 'Credential Reliability', traditional: '12% - 18% falsified experience', smileJobs: '0% Falsehood tolerance with cryptographic seal' },
+              { feature: 'Interview Scheduling', traditional: '5 to 10 email exchanges per candidate', smileJobs: '1-click Cal/Meet/Zoom panel booking' },
+              { feature: 'Cost per Verified Hire', traditional: 'Rs 45,000 - Rs 90,000 (Agency markup 15%)', smileJobs: 'Rs 12,400 flat unified subscription' },
             ].map((row, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-0 py-5 px-5 sm:px-6 items-center hover:bg-[#FCFCF7]/70 transition-colors"
-              >
-                <div className="sm:col-span-4 font-bold text-[#2C1B57] text-sm sm:text-xs">
-                  {row.feature}
-                </div>
+              <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-0 py-5 px-5 sm:px-6 items-center hover:bg-[#FCFCF7]/70 transition-colors">
+                <div className="sm:col-span-4 font-bold text-[#2C1B57] text-sm sm:text-xs">{row.feature}</div>
                 <div className="sm:col-span-4 text-[#6F687A] flex items-start gap-1.5">
                   <X className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                   <span><span className="sm:hidden font-bold">Traditional: </span>{row.traditional}</span>
@@ -1042,6 +1016,10 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* HIRING STEPS                                */}
+      {/* ═══════════════════════════════════════════ */}
       <section className="bg-white border-y border-[#E8E3EF] py-24 sm:py-28 px-5 sm:px-10 lg:px-14 xl:px-20">
         <div className="max-w-[1440px] mx-auto">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-12">
@@ -1060,53 +1038,67 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* Final Call to Action Band with Full-Width Presence */}
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* FINAL CTA                                   */}
+      {/* ═══════════════════════════════════════════ */}
       <section className="pb-24 px-6 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="bg-[#2C1B57] rounded-3xl p-10 sm:p-14 lg:p-16 text-white relative overflow-hidden shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-10 border border-white/10">
           <div className="relative z-10 max-w-2xl space-y-4">
-            <span className="text-xs font-bold uppercase tracking-widest text-[#B29CFE]">
-              Make your next move count
-            </span>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight">
-              Your next great hire may already be verified.
-            </h2>
-            <p className="text-base text-white/70 leading-relaxed font-normal">
-              Bring your roles, talent, and hiring decisions together. Start with your first job listing.
-            </p>
+            <span className="text-xs font-bold uppercase tracking-widest text-[#B29CFE]">Make your next move count</span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight">Your next great hire may already be verified.</h2>
+            <p className="text-base text-white/70 leading-relaxed font-normal">Bring your roles, talent, and hiring decisions together. Start with your first job listing.</p>
           </div>
 
           <div className="relative z-10 flex flex-wrap items-center gap-3.5 shrink-0">
-            <button
-              onClick={() => onNavigate('post-job')}
-              className="px-8 py-4 bg-white text-[#2C1B57] hover:bg-[#FCFCF7] text-sm font-extrabold rounded-2xl shadow-xl transition-all transform hover:-translate-y-0.5 flex items-center gap-2"
-            >
-              <span>Post a Job Free</span>
-              <ArrowRight className="w-4 h-4" />
+            <button onClick={() => onNavigate('post-job')} className="px-8 py-4 bg-white text-[#2C1B57] hover:bg-[#FCFCF7] text-sm font-extrabold rounded-2xl shadow-xl transition-all transform hover:-translate-y-0.5 flex items-center gap-2">
+              <span>Post a Job Free</span><ArrowRight className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => onNavigate('candidates')}
-              className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-sm font-extrabold rounded-2xl transition-all"
-            >
+            <button onClick={() => onNavigate('candidates')} className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-sm font-extrabold rounded-2xl transition-all">
               Explore Verified Talent
             </button>
           </div>
 
-          {/* Decorative ambient backdrop */}
           <div className="absolute -right-20 -bottom-20 w-96 h-96 bg-radial from-[#B29CFE]/30 to-transparent blur-3xl pointer-events-none" />
         </div>
       </section>
 
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* FOOTER WITH LOGO                            */}
+      {/* ═══════════════════════════════════════════ */}
       <footer className="mt-auto border-t border-[#E8E3EF] bg-white pt-16 pb-8 px-5 sm:px-10 lg:px-14 xl:px-20">
         <div className="max-w-[1440px] mx-auto">
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-[2fr_repeat(4,1fr)] gap-9 pb-14">
             <div className="col-span-2 sm:col-span-4 lg:col-span-1">
-              <span className="text-xl font-extrabold tracking-tight text-[#2C1B57]">Smile Jobs</span>
+              {/* ✅ LOGO IN FOOTER */}
+              <span className="text-xl font-extrabold tracking-tight text-[#2C1B57] flex items-center gap-2.5">
+                <AppLogo className="w-7 h-7 rounded-lg" />
+                Smile Jobs
+              </span>
               <p className="mt-3 max-w-[25ch] text-sm leading-relaxed text-[#6F687A]">Verified hiring infrastructure for modern teams.</p>
             </div>
-            <div className="space-y-3 text-sm"><h3 className="font-bold text-[#2C1B57]">Platform</h3><a href="#showcase" className="block text-[#6F687A] hover:text-[#42326E]">Product tour</a><button onClick={() => onNavigate('dashboard')} className="block text-[#6F687A] hover:text-[#42326E]">Recruiter console</button><button onClick={() => onNavigate('post-job')} className="block text-[#6F687A] hover:text-[#42326E]">Post a job</button></div>
-            <div className="space-y-3 text-sm"><h3 className="font-bold text-[#2C1B57]">Talent</h3><button onClick={() => onNavigate('candidates')} className="block text-[#6F687A] hover:text-[#42326E]">Browse candidates</button><a href="#comparison" className="block text-[#6F687A] hover:text-[#42326E]">Why Smile Jobs</a></div>
-            <div className="space-y-3 text-sm"><h3 className="font-bold text-[#2C1B57]">Account</h3><button onClick={() => onNavigate(authUser ? 'profile' : 'login')} className="block text-[#6F687A] hover:text-[#42326E]">{authUser ? 'My profile' : 'Sign in'}</button><button onClick={() => onOpenInfo('contact')} className="block text-[#6F687A] hover:text-[#42326E]">Contact support</button></div>
-            <div className="space-y-3 text-sm"><h3 className="font-bold text-[#2C1B57]">Legal</h3><button onClick={() => onOpenInfo('privacy')} className="block text-[#6F687A] hover:text-[#42326E]">Privacy & security</button><button onClick={() => onOpenInfo('terms')} className="block text-[#6F687A] hover:text-[#42326E]">Terms of service</button></div>
+            <div className="space-y-3 text-sm">
+              <h3 className="font-bold text-[#2C1B57]">Platform</h3>
+              <a href="#showcase" className="block text-[#6F687A] hover:text-[#42326E]">Product tour</a>
+              <button onClick={() => onNavigate('dashboard')} className="block text-[#6F687A] hover:text-[#42326E]">Recruiter console</button>
+              <button onClick={() => onNavigate('post-job')} className="block text-[#6F687A] hover:text-[#42326E]">Post a job</button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <h3 className="font-bold text-[#2C1B57]">Talent</h3>
+              <button onClick={() => onNavigate('candidates')} className="block text-[#6F687A] hover:text-[#42326E]">Browse candidates</button>
+              <a href="#comparison" className="block text-[#6F687A] hover:text-[#42326E]">Why Smile Jobs</a>
+            </div>
+            <div className="space-y-3 text-sm">
+              <h3 className="font-bold text-[#2C1B57]">Account</h3>
+              <button onClick={() => onNavigate(authUser ? 'profile' : 'login')} className="block text-[#6F687A] hover:text-[#42326E]">{authUser ? 'My profile' : 'Sign in'}</button>
+              <button onClick={() => onOpenInfo('contact')} className="block text-[#6F687A] hover:text-[#42326E]">Contact support</button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <h3 className="font-bold text-[#2C1B57]">Legal</h3>
+              <button onClick={() => onOpenInfo('privacy')} className="block text-[#6F687A] hover:text-[#42326E]">Privacy & security</button>
+              <button onClick={() => onOpenInfo('terms')} className="block text-[#6F687A] hover:text-[#42326E]">Terms of service</button>
+            </div>
           </div>
           <div className="border-t border-[#E8E3EF] pt-6 text-xs text-[#6F687A]">© 2026 Smile Jobs. All rights reserved.</div>
         </div>

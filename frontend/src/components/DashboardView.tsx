@@ -12,6 +12,7 @@ import {
   Sparkles,
   Award,
   ChevronDown,
+  Crown,
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -22,6 +23,19 @@ interface DashboardViewProps {
   onScheduleInterview: (candidate: Candidate) => void;
   authUser?: AuthUser | null;
 }
+
+// ✅ APP LOGO COMPONENT — uses YOUR uploaded logo.png from public folder
+const AppLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
+  <img
+    src="/logo.png"
+    alt="Smile Jobs"
+    className={`object-contain shrink-0 ${className}`}
+    onError={(e) => {
+      // Fallback if logo not found
+      (e.target as HTMLImageElement).style.display = 'none';
+    }}
+  />
+);
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   candidates,
@@ -81,34 +95,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6 md:space-y-8 animate-in fade-in duration-300">
       
-      {/* ─── Top Header ─── */}
+      {/* ─── Top Header with Your Logo ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 md:p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
-        {/* Subtle decorative background gradient */}
+        {/* Decorative glow */}
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-gradient-to-br from-[#B29CFE]/20 to-transparent rounded-full blur-2xl pointer-events-none" />
         
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight">
-              Good morning, {authUser?.name?.split(' ')[0] || 'Recruiter'}
-            </h1>
-            {authUser?.subscription?.tier && (
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-extrabold rounded-full border shadow-sm ${
-                authUser.subscription.tier === 'enterprise'
-                  ? 'bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200'
-                  : authUser.subscription.tier === 'standard'
-                    ? 'bg-gradient-to-r from-[#F8F5FF] to-[#EDE6FA] text-[#42326E] border-[#D7C8ED]'
-                    : 'bg-gray-50 text-gray-600 border-gray-200'
-              }`}>
-                {authUser.subscription.tier === 'enterprise' && <Award className="w-3.5 h-3.5 text-amber-500" />}
-                {authUser.subscription.tier === 'standard' && <Zap className="w-3.5 h-3.5 text-[#42326E]" />}
-                {authUser.subscription.tier === 'basic' && <ShieldCheck className="w-3.5 h-3.5" />}
-                <span className="uppercase tracking-wider">{authUser.subscription.name}</span>
-              </span>
-            )}
+        <div className="relative z-10 flex items-start gap-4">
+          {/* ✅ Your Logo on Dashboard Header */}
+          <AppLogo className="w-14 h-14 rounded-xl shadow-md hidden sm:block" />
+          
+          <div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight">
+                Good morning, {authUser?.name?.split(' ')[0] || 'Recruiter'}
+              </h1>
+              {authUser?.subscription?.tier && (
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-extrabold rounded-full border shadow-sm ${
+                  authUser.subscription.tier === 'enterprise'
+                    ? 'bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200'
+                    : authUser.subscription.tier === 'standard'
+                      ? 'bg-gradient-to-r from-[#F8F5FF] to-[#EDE6FA] text-[#42326E] border-[#D7C8ED]'
+                      : 'bg-gray-50 text-gray-600 border-gray-200'
+                }`}>
+                  {authUser.subscription.tier === 'enterprise' && <Award className="w-3.5 h-3.5 text-amber-500" />}
+                  {authUser.subscription.tier === 'standard' && <Zap className="w-3.5 h-3.5 text-[#42326E]" />}
+                  {authUser.subscription.tier === 'basic' && <ShieldCheck className="w-3.5 h-3.5" />}
+                  <span className="uppercase tracking-wider">{authUser.subscription.name}</span>
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mt-1 font-medium">
+              Here is your live recruiting pipeline and candidate verification overview.
+            </p>
           </div>
-          <p className="text-sm text-gray-500 mt-1 font-medium">
-            Here is your live recruiting pipeline and candidate verification overview.
-          </p>
         </div>
 
         <div className="flex items-center gap-3 relative z-10 w-full sm:w-auto">
@@ -130,7 +149,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* ─── Metric Bento Strip ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1 */}
+        {/* Metric 1 — Total Applicants */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between group">
           <div className="flex items-start justify-between">
             <div>
@@ -148,7 +167,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 2 */}
+        {/* Metric 2 — Active Openings */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div>
@@ -167,7 +186,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 3 */}
+        {/* Metric 3 — Verified Talent */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div>
@@ -184,7 +203,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 4 */}
+        {/* Metric 4 — Shortlisted Pool */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div>
@@ -220,7 +239,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Kanban Board Container (Mobile horizontal scroll snap setup) */}
+        {/* Kanban Board */}
         <div className="flex overflow-x-auto pb-6 pt-2 -mx-4 px-4 md:mx-0 md:px-0 gap-4 snap-x snap-mandatory hide-scrollbar">
           {stages.map((stage) => {
             const stageCandidates = candidates.filter((c) => c.stage === stage);
@@ -252,7 +271,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </span>
                 </div>
 
-                {/* Candidate Cards List */}
+                {/* Candidate Cards */}
                 <div className="px-3 pb-3 space-y-3 flex-1 overflow-y-auto custom-scrollbar">
                   {stageCandidates.map((cand) => {
                     const isPremium = isPremiumCandidate(cand);
@@ -262,32 +281,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         draggable
                         onDragStart={(e) => handleDragStart(e, cand.id)}
                         onClick={() => onSelectCandidate(cand)}
-                        className={`bg-white rounded-2xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative overflow-hidden ${
-                          isPremium ? 'border-2 border-amber-200' : 'border border-gray-200 hover:border-[#B29CFE]'
+                        className={`bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all cursor-grab active:cursor-grabbing group relative overflow-hidden ${
+                          isPremium
+                            ? 'border-2 border-amber-300 ring-4 ring-amber-100/50 hover:ring-amber-200/70'
+                            : 'border border-gray-200 hover:border-[#B29CFE]'
                         }`}
                       >
-                        {/* 🌟 Premium Highlight Strip */}
+                        {/* 👑 PREMIUM Glowing Gold Strip */}
                         {isPremium && (
-                          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500" />
+                          <>
+                            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-yellow-300 via-amber-500 to-orange-400" />
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-300/30 to-transparent rounded-full blur-xl pointer-events-none" />
+                          </>
                         )}
 
-                        <div className={`p-4 ${isPremium ? 'pt-5' : ''}`}>
-                          {/* Top Row: Avatar + Premium Badge */}
+                        <div className={`p-4 ${isPremium ? 'pt-5' : ''} relative z-10`}>
+                          {/* Avatar + Premium Badge */}
                           <div className="flex items-start justify-between mb-3 gap-2">
                             <div className="flex items-center gap-3">
                               <div className="relative">
                                 <div
-                                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shadow-inner"
+                                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shadow-inner ${
+                                    isPremium ? 'ring-2 ring-amber-300' : ''
+                                  }`}
                                   style={{ backgroundColor: cand.avatarBg }}
                                 >
                                   {getInitials(cand.name)}
                                 </div>
-                                {/* Green Dot Online Indicator */}
                                 <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full" />
                               </div>
                               <div className="min-w-0">
-                                <div className="text-[13px] font-extrabold text-[#2C1B57] truncate group-hover:text-[#42326E] transition-colors">
+                                <div className="text-[13px] font-extrabold text-[#2C1B57] truncate group-hover:text-[#42326E] transition-colors flex items-center gap-1">
                                   {cand.name}
+                                  {isPremium && <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />}
                                 </div>
                                 <div className="text-[11px] font-medium text-gray-500 truncate">
                                   {cand.role}
@@ -295,19 +321,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               </div>
                             </div>
                             
-                            {/* Premium Match Badge */}
+                            {/* 👑 VIP Premium Badge */}
                             {isPremium && (
-                              <div className="flex flex-col items-end">
-                                <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-700 text-[9px] font-extrabold px-2 py-1 rounded-lg shadow-xs whitespace-nowrap">
-                                  <Sparkles className="w-3 h-3 text-amber-500" />
-                                  Top Match
+                              <div className="flex flex-col items-end shrink-0">
+                                <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 border border-amber-500/50 text-white text-[9px] font-extrabold px-2 py-1 rounded-lg shadow-md whitespace-nowrap">
+                                  <Sparkles className="w-3 h-3 text-white" />
+                                  VIP MATCH
                                 </span>
-                                <span className="text-[10px] font-bold text-amber-600 mt-1">{cand.matchScore}% Score</span>
+                                <strong className="text-base leading-none font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-orange-600 tabular-nums mt-1">
+                                  {cand.matchScore}%
+                                </strong>
                               </div>
                             )}
                           </div>
 
-                          {/* Middle Row: Tags */}
+                          {/* Tags Row */}
                           <div className="flex flex-wrap gap-1.5 mb-4">
                             <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 border border-gray-100 rounded-md text-[10px] font-semibold text-gray-600">
                               <MapPin className="w-3 h-3 text-gray-400" />
@@ -324,7 +352,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             )}
                           </div>
 
-                          {/* Footer Info */}
+                          {/* Footer */}
                           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                             <span className="flex items-center gap-1 text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-md">
                               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -369,7 +397,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     );
                   })}
 
-                  {/* Empty Column Drop Zone */}
+                  {/* Empty State */}
                   {stageCandidates.length === 0 && (
                     <div className="h-32 border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 gap-2 bg-white/40">
                       <div className="p-2 rounded-full bg-gray-100">
