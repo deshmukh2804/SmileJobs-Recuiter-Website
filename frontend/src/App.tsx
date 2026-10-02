@@ -1,11 +1,10 @@
+// FILE: frontend/src/App.tsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AppRoute,
   Candidate,
   JobListing,
   Interview,
-  MessageThread,
-  NotificationItem,
   CompanyProfile,
   PipelineStage,
   AuthUser,
@@ -14,8 +13,6 @@ import {
   INITIAL_CANDIDATES,
   INITIAL_JOBS,
   INITIAL_INTERVIEWS,
-  INITIAL_THREADS,
-  INITIAL_NOTIFICATIONS,
   INITIAL_COMPANY,
   STORAGE_KEYS,
   loadStoredData,
@@ -40,9 +37,6 @@ import { JobDetailsView } from './components/JobDetailsView';
 import { CandidatesView } from './components/CandidatesView';
 import { ShortlistedView } from './components/ShortlistedView';
 import { InterviewsView } from './components/InterviewsView';
-import { MessagesView } from './components/MessagesView';
-import { NotificationsView } from './components/NotificationsView';
-import { AnalyticsView } from './components/AnalyticsView';
 import { CompanyProfileView } from './components/CompanyProfileView';
 import { SettingsView } from './components/SettingsView';
 import { SubscriptionView } from './components/SubscriptionView';
@@ -55,9 +49,6 @@ import {
   Users,
   Star,
   Calendar,
-  MessageSquare,
-  Bell,
-  BarChart3,
   Building,
   Settings,
   Search,
@@ -92,9 +83,6 @@ const PROTECTED_ROUTES: AppRoute[] = [
   'candidates',
   'shortlisted',
   'interviews',
-  'messages',
-  'notifications',
-  'analytics',
   'company',
   'settings',
   'subscription',
@@ -206,12 +194,6 @@ export default function App() {
   const [interviews, setInterviews] = useState<Interview[]>(() =>
     loadStoredData(STORAGE_KEYS.INTERVIEWS, INITIAL_INTERVIEWS)
   );
-  const [threads, setThreads] = useState<MessageThread[]>(() =>
-    loadStoredData(STORAGE_KEYS.THREADS, INITIAL_THREADS)
-  );
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() =>
-    loadStoredData(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS)
-  );
   const [company, setCompany] = useState<CompanyProfile>(() =>
     loadStoredData(STORAGE_KEYS.COMPANY, INITIAL_COMPANY)
   );
@@ -222,12 +204,6 @@ export default function App() {
   useEffect(() => {
     saveStoredData(STORAGE_KEYS.INTERVIEWS, interviews);
   }, [interviews]);
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.THREADS, threads);
-  }, [threads]);
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.NOTIFICATIONS, notifications);
-  }, [notifications]);
   useEffect(() => {
     saveStoredData(STORAGE_KEYS.COMPANY, company);
   }, [company]);
@@ -250,6 +226,10 @@ export default function App() {
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
   }, []);
+
+  const handleFeatureUnavailable = useCallback(() => {
+    showToast('This feature has been removed.');
+  }, [showToast]);
 
   // ═══════════════════════════════════════════════════════
   // AUTH HANDLERS
@@ -516,80 +496,11 @@ export default function App() {
   );
 
   // ═══════════════════════════════════════════════════════
-  // MESSAGING HANDLERS
-  // ═══════════════════════════════════════════════════════
-  const handleOpenMessage = useCallback(
-    (candidate: Candidate) => {
-      setActiveCandidate(null);
-      const existing = threads.find((t) => t.candidateId === candidate.id);
-      if (!existing) {
-        const newThread: MessageThread = {
-          id: `thread-${Date.now()}`,
-          candidateId: candidate.id,
-          candidateName: candidate.name,
-          candidateRole: candidate.role,
-          candidateAvatarBg: candidate.avatarBg,
-          lastMessage: 'Conversation opened',
-          lastMessageTime: 'Just now',
-          unread: false,
-          messages: [
-            {
-              id: `msg-${Date.now()}`,
-              sender: 'recruiter',
-              text: `Hello ${candidate.name}, we reviewed your verified credentials for ${candidate.role} and would love to connect.`,
-              time: 'Just now',
-            },
-          ],
-        };
-        setThreads((prev) => [newThread, ...prev]);
-      }
-      setCurrentRoute('messages');
-    },
-    [threads]
-  );
-
-  const handleSendMessage = useCallback(
-    (threadId: string, text: string) => {
-      setThreads((prev) =>
-        prev.map((th) => {
-          if (th.id === threadId) {
-            const newMsg = {
-              id: `m-${Date.now()}`,
-              sender: 'recruiter' as const,
-              text,
-              time: 'Just now',
-            };
-            return {
-              ...th,
-              lastMessage: text,
-              lastMessageTime: 'Just now',
-              messages: [...th.messages, newMsg],
-            };
-          }
-          return th;
-        })
-      );
-      showToast('Message dispatched');
-    },
-    [showToast]
-  );
-
-  // ═══════════════════════════════════════════════════════
-  // NOTIFICATION HANDLERS
-  // ═══════════════════════════════════════════════════════
-  const handleMarkAllNotificationsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    showToast('All notifications marked as read');
-  }, [showToast]);
-
-  // ═══════════════════════════════════════════════════════
   // SETTINGS HANDLERS
   // ═══════════════════════════════════════════════════════
   const handleResetData = useCallback(() => {
     setJobs(INITIAL_JOBS);
     setInterviews(INITIAL_INTERVIEWS);
-    setThreads(INITIAL_THREADS);
-    setNotifications(INITIAL_NOTIFICATIONS);
     setCompany(INITIAL_COMPANY);
     fetchCandidates();
     showToast('Demonstration data restored to initial state');
@@ -611,12 +522,6 @@ export default function App() {
   // ═══════════════════════════════════════════════════════
   // COMPUTED VALUES
   // ═══════════════════════════════════════════════════════
-
-  const unreadNotifCount = useMemo(
-    () => notifications.filter((n) => !n.read).length,
-    [notifications]
-  );
-
   const getUserInitials = useCallback((name?: string) => {
     if (!name || !name.trim()) return 'R';
     return name
@@ -658,25 +563,8 @@ export default function App() {
         label: 'Interviews',
         icon: Calendar,
       },
-      {
-        // ❌ Removed the badge notification logic from here
-        id: 'messages' as AppRoute,
-        label: 'Messages',
-        icon: MessageSquare,
-      },
-      {
-        id: 'notifications' as AppRoute,
-        label: 'Notifications',
-        icon: Bell,
-        badge: unreadNotifCount > 0 ? unreadNotifCount : undefined,
-      },
-      {
-        id: 'analytics' as AppRoute,
-        label: 'Analytics',
-        icon: BarChart3,
-      },
     ],
-    [unreadNotifCount] // Removed unreadMessagesCount from dependencies
+    []
   );
 
   const secondaryNavItems = useMemo(
@@ -720,7 +608,7 @@ export default function App() {
           setActiveCandidate(null);
           handleOpenScheduleModal(cand);
         }}
-        onOpenMessage={(cand) => handleOpenMessage(cand)}
+        onOpenMessage={handleFeatureUnavailable}
         onAddNote={(id, note) => {
           handleAddCandidateNote(id, note);
           setActiveCandidate((prev) =>
@@ -810,11 +698,6 @@ export default function App() {
                       <Icon className="w-4 h-4 shrink-0" />
                       <span>{item.label}</span>
                     </div>
-                    {item.badge !== undefined && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-[#42326E] text-[10px] font-extrabold text-[#E0D4FC]">
-                        {item.badge}
-                      </span>
-                    )}
                   </button>
                 );
               })}
@@ -940,26 +823,6 @@ export default function App() {
                   </button>
                 )}
 
-                {/* ❌ Removed the red dot notification logic from Messages Header Icon */}
-                <button
-                  onClick={() => handleNavigate('messages')}
-                  className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-white rounded-xl relative transition-colors"
-                  title="Messages"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                </button>
-
-                <button
-                  onClick={() => handleNavigate('notifications')}
-                  className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-white rounded-xl relative transition-colors"
-                  title="Notifications"
-                >
-                  <Bell className="w-4 h-4" />
-                  {unreadNotifCount > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-1.5 right-1.5" />
-                  )}
-                </button>
-
                 <div className="h-6 w-px bg-[#E8E3EF] mx-1" />
 
                 <button
@@ -1056,11 +919,6 @@ export default function App() {
                             <Icon className="w-4 h-4" />
                             <span>{item.label}</span>
                           </div>
-                          {item.badge !== undefined && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-[#42326E] text-[10px] font-extrabold text-[#E0D4FC]">
-                              {item.badge}
-                            </span>
-                          )}
                         </button>
                       );
                     })}
@@ -1183,7 +1041,7 @@ export default function App() {
                           )
                         );
                       }}
-                      onOpenMessage={handleOpenMessage}
+                      onOpenMessage={handleFeatureUnavailable}
                     />
                   )}
                 </>
@@ -1194,7 +1052,7 @@ export default function App() {
                   candidates={candidates}
                   onSelectCandidate={(cand) => setActiveCandidate(cand)}
                   onScheduleInterview={handleOpenScheduleModal}
-                  onOpenMessage={handleOpenMessage}
+                  onOpenMessage={handleFeatureUnavailable}
                   onNavigate={handleNavigate}
                 />
               )}
@@ -1209,28 +1067,6 @@ export default function App() {
                   onShowToast={showToast}
                 />
               )}
-
-              {currentRoute === 'messages' && (
-                <MessagesView
-                  threads={threads}
-                  activeCandidateId={activeCandidate?.id}
-                  onSendMessage={handleSendMessage}
-                  onSelectCandidateDrawer={(name) => {
-                    const found = candidates.find((c) => c.name === name);
-                    if (found) setActiveCandidate(found);
-                  }}
-                />
-              )}
-
-              {currentRoute === 'notifications' && (
-                <NotificationsView
-                  notifications={notifications}
-                  onMarkAllAsRead={handleMarkAllNotificationsRead}
-                  onNavigate={handleNavigate}
-                />
-              )}
-
-              {currentRoute === 'analytics' && <AnalyticsView />}
 
               {currentRoute === 'company' && (
                 <CompanyProfileView

@@ -1,3 +1,6 @@
+// FILE: frontend/src/types.ts
+
+// ❌ Removed 'messages', 'notifications', 'analytics' from AppRoute
 export type AppRoute =
   | 'landing'
   | 'login'
@@ -9,13 +12,10 @@ export type AppRoute =
   | 'candidates'
   | 'shortlisted'
   | 'interviews'
-  | 'messages'
-  | 'notifications'
-  | 'analytics'
   | 'company'
-  | 'profile'      // ✅ NEW route for recruiter personal profile
+  | 'profile'
   | 'settings'
-    | 'subscription'; 
+  | 'subscription';
 
 export type PipelineStage =
   | 'Applied'
@@ -214,7 +214,6 @@ export interface AuthUser {
   avatar?: { url?: string; public_id?: string };
   role: 'recruiter';
   loginMethod: 'google' | 'phone_otp' | 'email_otp';
-  // ✅ Which field is locked (cannot be edited) based on login method
   lockedField?: 'phone' | 'email' | null;
   companyName?: string;
   designation?: string;
@@ -223,25 +222,6 @@ export interface AuthUser {
   verificationSubmittedAt?: string | null;
   verificationReviewedAt?: string | null;
   rejectionReason?: string;
-}
-
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  avatar?: { url?: string; public_id?: string };
-  role: 'recruiter';
-  loginMethod: 'google' | 'phone_otp' | 'email_otp';
-  lockedField?: 'phone' | 'email' | null;
-  companyName?: string;
-  designation?: string;
-  isVerified?: boolean;
-  verificationStatus?: CompanyVerificationStatus;
-  verificationSubmittedAt?: string | null;
-  verificationReviewedAt?: string | null;
-  rejectionReason?: string;
-  // ✅ SUBSCRIPTION DATA (returned by /auth/me)
   subscription?: {
     id: string;
     tier: string;
@@ -258,12 +238,11 @@ export interface AuthUser {
     subscriptionActive: boolean;
   } | null;
 }
-// ═══ SUBSCRIPTION TYPES ═══
 
 export interface SubscriptionPlan {
   _id: string;
   name: string;
-  tier: string; // dynamic from admin: 'basic' | 'standard' | 'enterprise' | custom
+  tier: string;
   audience?: string;
   price: number;
   priceYearly?: number;
@@ -313,8 +292,6 @@ export interface RazorpayCheckoutInit {
   planName?: string;
   planTier?: string;
 }
-
-// ═══ CANDIDATE FULL DETAIL TYPES ═══
 
 export type CandidateStatus =
   | 'Applied'
