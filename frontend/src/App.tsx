@@ -611,10 +611,6 @@ export default function App() {
   // ═══════════════════════════════════════════════════════
   // COMPUTED VALUES
   // ═══════════════════════════════════════════════════════
-  const unreadMessagesCount = useMemo(
-    () => threads.filter((t) => t.unread).length,
-    [threads]
-  );
 
   const unreadNotifCount = useMemo(
     () => notifications.filter((n) => !n.read).length,
@@ -663,10 +659,10 @@ export default function App() {
         icon: Calendar,
       },
       {
+        // ❌ Removed the badge notification logic from here
         id: 'messages' as AppRoute,
         label: 'Messages',
         icon: MessageSquare,
-        badge: unreadMessagesCount > 0 ? unreadMessagesCount : undefined,
       },
       {
         id: 'notifications' as AppRoute,
@@ -680,7 +676,7 @@ export default function App() {
         icon: BarChart3,
       },
     ],
-    [unreadMessagesCount, unreadNotifCount]
+    [unreadNotifCount] // Removed unreadMessagesCount from dependencies
   );
 
   const secondaryNavItems = useMemo(
@@ -944,15 +940,13 @@ export default function App() {
                   </button>
                 )}
 
+                {/* ❌ Removed the red dot notification logic from Messages Header Icon */}
                 <button
                   onClick={() => handleNavigate('messages')}
                   className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-white rounded-xl relative transition-colors"
                   title="Messages"
                 >
                   <MessageSquare className="w-4 h-4" />
-                  {unreadMessagesCount > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-[#42326E] absolute top-1.5 right-1.5" />
-                  )}
                 </button>
 
                 <button
