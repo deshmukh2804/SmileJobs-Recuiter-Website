@@ -48,7 +48,7 @@ export const InfoModals: React.FC<InfoModalProps> = ({
             <h2 className="text-base font-bold capitalize">
               {type === 'privacy' && 'Privacy Policy & Data Security'}
               {type === 'terms' && 'Terms of Service & Recruiter Agreement'}
-              {type === 'contact' && 'Contact Verihire Talent Support'}
+              {type === 'contact' && 'Contact Smile Jobs Talent Support'}
             </h2>
           </div>
           <button
@@ -66,7 +66,7 @@ export const InfoModals: React.FC<InfoModalProps> = ({
                 Your candidate privacy and enterprise hiring data are safeguarded.
               </p>
               <p>
-                Verihire complies with ISO 27001 data protection standards, SOC2 Type II audit guidelines, and Indian Digital Personal Data Protection (DPDP) Act compliance.
+                Smile Jobs complies with ISO 27001 data protection standards, SOC2 Type II audit guidelines, and Indian Digital Personal Data Protection (DPDP) Act compliance.
               </p>
               <h4 className="font-bold text-[#2C1B57] text-xs uppercase tracking-wider">
                 1. Candidate Identity Verification
@@ -92,7 +92,7 @@ export const InfoModals: React.FC<InfoModalProps> = ({
                 Terms of Service for Employers & Job Seekers
               </p>
               <p>
-                By using Verihire, you agree to fair recruitment practices, verified communication channels, and ethical hiring workflows.
+                By using Smile Jobs, you agree to fair recruitment practices, verified communication channels, and ethical hiring workflows.
               </p>
               <h4 className="font-bold text-[#2C1B57] text-xs uppercase tracking-wider">
                 1. Accuracy of Job Listings
@@ -132,7 +132,7 @@ export const InfoModals: React.FC<InfoModalProps> = ({
                   <div className="grid grid-cols-2 gap-3 text-xs text-[#6F687A] pb-2 border-b border-[#E8E3EF]">
                     <div className="flex items-center gap-1.5">
                       <Mail className="w-3.5 h-3.5 text-[#42326E]" />
-                      <span>support@verihire.example</span>
+                      <span>Use the contact form below</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-[#42326E]" />

@@ -170,7 +170,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
             <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-[#FCFCF7]/40">
               <div className="text-center my-2">
                 <span className="text-[10px] font-bold text-[#6F687A] bg-white border border-[#E8E3EF] px-3 py-1 rounded-full shadow-2xs">
-                  Encrypted Recruiter Channel • Verihire Verified
+                  Encrypted Recruiter Channel • Smile Jobs Verified
                 </span>
               </div>
 

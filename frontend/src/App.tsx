@@ -38,6 +38,7 @@ import { CandidatesView } from './components/CandidatesView';
 import { ShortlistedView } from './components/ShortlistedView';
 import { InterviewsView } from './components/InterviewsView';
 import { CompanyProfileView } from './components/CompanyProfileView';
+import { ProfileView } from './components/ProfileView';
 import { SettingsView } from './components/SettingsView';
 import { SubscriptionView } from './components/SubscriptionView';
 
@@ -57,6 +58,7 @@ import {
   ExternalLink,
   LogOut,
   Sparkles,
+  UserRound,
 } from 'lucide-react';
 
 // ✅ ONE-TIME LOCAL CACHE CLEANUP for legacy fake emails
@@ -84,6 +86,7 @@ const PROTECTED_ROUTES: AppRoute[] = [
   'shortlisted',
   'interviews',
   'company',
+  'profile',
   'settings',
   'subscription',
 ];
@@ -570,6 +573,11 @@ export default function App() {
   const secondaryNavItems = useMemo(
     () => [
       {
+        id: 'profile' as AppRoute,
+        label: 'My Profile',
+        icon: UserRound,
+      },
+      {
         id: 'company' as AppRoute,
         label: 'Company Profile',
         icon: Building,
@@ -628,7 +636,7 @@ export default function App() {
         type={infoModalType}
         onClose={() => setInfoModalType(null)}
         onSubmitContact={() =>
-          showToast('Inquiry dispatched to Verihire talent team')
+          showToast('Inquiry dispatched to Smile Jobs talent team')
         }
       />
 
@@ -638,6 +646,7 @@ export default function App() {
           featuredCandidates={candidates}
           onSelectCandidate={(cand) => setActiveCandidate(cand)}
           onOpenInfo={(t) => setInfoModalType(t)}
+          authUser={authUser}
         />
       ) : currentRoute === 'login' ? (
         <LoginView
@@ -659,7 +668,7 @@ export default function App() {
                   <div className="absolute top-2 w-3.5 h-0.5 bg-white rounded-full" />
                 </div>
                 <span className="font-extrabold text-base tracking-tight">
-                  Verihire
+                  Smile Jobs
                 </span>
               </div>
               <button
@@ -735,9 +744,9 @@ export default function App() {
 
             {/* Footer Profile */}
             <div className="p-3 border-t border-white/10">
-              <div
-                onClick={() => handleNavigate('settings')}
-                className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors"
+              <button
+                onClick={() => handleNavigate('profile')}
+                className="w-full text-left flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors"
                 title="Edit profile"
               >
                 {authUser?.avatar?.url ? (
@@ -759,7 +768,7 @@ export default function App() {
                     {sidebarSubline}
                   </div>
                 </div>
-              </div>
+              </button>
             </div>
           </aside>
 
@@ -780,9 +789,9 @@ export default function App() {
                   className="flex items-center gap-2 font-bold text-[#2C1B57] cursor-pointer"
                 >
                   <div className="w-6 h-6 rounded-md bg-[#2C1B57] flex items-center justify-center text-white text-xs font-bold">
-                    VH
+                    SJ
                   </div>
-                  <span>Verihire</span>
+                  <span>Smile Jobs</span>
                 </div>
               </div>
 
@@ -853,7 +862,7 @@ export default function App() {
                 />
                 <div className="relative w-64 bg-[#2C1B57] text-white flex flex-col h-full shadow-2xl z-10 animate-in slide-in-from-left duration-200">
                   <div className="p-4 flex items-center justify-between border-b border-white/10">
-                    <span className="font-extrabold text-base">Verihire</span>
+                    <span className="font-extrabold text-base">Smile Jobs</span>
                     <button
                       onClick={() => setMobileMenuOpen(false)}
                       className="p-1 rounded-lg text-white/70 hover:text-white"
@@ -1075,6 +1084,13 @@ export default function App() {
                   onShowToast={showToast}
                   authUser={authUser}
                   onUpdateAuthUser={handleUpdateAuthUser}
+                />
+              )}
+
+              {currentRoute === 'profile' && (
+                <ProfileView
+                  onShowToast={showToast}
+                  onUserUpdate={handleReplaceAuthUser}
                 />
               )}
 

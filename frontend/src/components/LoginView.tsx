@@ -272,7 +272,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
             <div className="absolute top-2 w-3.5 h-0.5 bg-white rounded-full" />
           </div>
           <span className="tracking-tight text-xl font-extrabold text-[#2C1B57]">
-            Verihire
+            Smile Jobs
           </span>
         </div>
 
@@ -338,12 +338,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </div>
 
             <div className="mt-8 pt-6 border-t border-white/10 relative z-10">
-              <p className="text-xs text-white/80 italic leading-relaxed">
-                "Verihire cut our screening time from 3 weeks down to 48 hours. Zero fake profiles guaranteed."
+              <p className="text-xs text-white/80 leading-relaxed">
+                Smile Jobs brings candidate information and hiring decisions together in one workspace.
               </p>
-              <div className="text-xs font-bold text-white mt-2">
-                Head of Talent Acquisition • Aurelia Health
-              </div>
             </div>
           </div>
 
@@ -790,7 +787,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
             {/* Bottom Footer Note */}
             <div className="pt-6 border-t border-[#E8E3EF] text-center text-xs text-[#6F687A]">
-              By continuing, you agree to Verihire's{' '}
+              By continuing, you agree to Smile Jobs&apos;{' '}
               <button
                 type="button"
                 onClick={() => onNavigate('landing')}
@@ -814,7 +811,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
       {/* Footer Legal Strip */}
       <footer className="py-4 text-center text-[11px] text-[#6F687A] z-10">
-        © 2026 Verihire Talent Technologies Inc. • 256-Bit SSL Cryptographic Encryption
+        © 2026 Smile Jobs. All rights reserved.
       </footer>
     </div>
   );

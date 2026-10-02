@@ -119,7 +119,7 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({
         key: razorpayKeyId,
         amount: (checkout.amount || 0) * 100, // Convert to paise
         currency: checkout.currency || 'INR',
-        name: 'Verihire',
+        name: 'Smile Jobs',
         description: `${plan.name} Subscription`,
         order_id: checkout.orderId,
         handler: async (response: any) => {

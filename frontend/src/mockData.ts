@@ -525,7 +525,7 @@ export const INITIAL_INTERVIEWS: Interview[] = [
     time: '02:00 PM - 03:00 PM',
     format: 'In-person',
     interviewer: 'Bhavuk Deshmukh & Head of Product',
-    link: 'Verihire HQ, Arera Colony, Bhopal',
+    link: 'Smile Jobs HQ, Arera Colony, Bhopal',
     notes: 'Design portfolio walkthrough & collaborative whiteboarding challenge.',
     status: 'scheduled',
   },
@@ -551,7 +551,7 @@ export const INITIAL_THREADS: MessageThread[] = [
       {
         id: 'm2',
         sender: 'candidate',
-        text: 'Hello Bhavuk! Thank you so much for reaching out. I have been following Verihire and love the focus on verified talent. Next Tuesday afternoon works great for me.',
+        text: 'Hello Bhavuk! Thank you so much for reaching out. I have been following Smile Jobs and love the focus on verified talent. Next Tuesday afternoon works great for me.',
         time: 'Yesterday 05:15 PM',
       },
       {
@@ -611,7 +611,7 @@ export const INITIAL_THREADS: MessageThread[] = [
       {
         id: 'm31',
         sender: 'recruiter',
-        text: 'Hello Priya, your credentials and identity have been verified on Verihire. We would like to review your data pipeline project.',
+        text: 'Hello Priya, your credentials and identity have been verified on Smile Jobs. We would like to review your data pipeline project.',
         time: 'Sep 19 11:00 AM',
       },
       {
@@ -664,14 +664,14 @@ export const INITIAL_NOTIFICATIONS: NotificationItem[] = [
 ];
 
 export const INITIAL_COMPANY: CompanyProfile = {
-  name: 'Verihire Recruiting Corp',
+  name: 'Smile Jobs',
   tagline: 'Precision recruitment with verified talent credentials',
   industry: 'Human Resources & Talent Intelligence Software',
   headquarters: 'Bhopal, Madhya Pradesh, India',
-  website: 'https://verihire.example.com',
+  website: '',
   teamSize: '50-150 employees',
   foundedYear: '2023',
-  about: 'Verihire is an enterprise talent acquisition ecosystem that verifies candidate identity, education, and past tenure before they land on recruiter dashboards, drastically reducing screening time from weeks to 48 hours.',
+  about: 'Smile Jobs is a talent acquisition platform that brings candidate information, hiring pipelines, and interviews into one workspace.',
   perks: [
     'Comprehensive Family Health Cover',
     '₹50,000 Annual Learning & Conference Budget',
@@ -696,7 +696,21 @@ export function loadStoredData<T>(key: string, defaultValue: T): T {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return defaultValue;
-    return JSON.parse(raw) as T;
+    const stored = JSON.parse(raw) as T;
+    if (key === STORAGE_KEYS.COMPANY && stored && typeof stored === 'object') {
+      const company = stored as unknown as CompanyProfile;
+      if (company.name === 'Verihire Recruiting Corp') {
+        return {
+          ...company,
+          name: INITIAL_COMPANY.name,
+          website: company.website === 'https://verihire.example.com' ? '' : company.website,
+          about: company.about?.startsWith('Verihire is an enterprise talent acquisition ecosystem')
+            ? INITIAL_COMPANY.about
+            : company.about,
+        } as T;
+      }
+    }
+    return stored;
   } catch (e) {
     console.warn(`Error reading ${key} from storage:`, e);
     return defaultValue;

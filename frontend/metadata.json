@@ -1,5 +1,5 @@
 {
-  "name": "Verihire - Recruitment Platform",
+  "name": "Smile Jobs - Recruitment Platform",
   "description": "Enterprise-grade recruitment platform to post jobs, discover verified candidates, and manage your hiring pipeline.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

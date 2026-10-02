@@ -163,7 +163,7 @@ export const AnalyticsView: React.FC = () => {
             <div>
               <div className="flex justify-between mb-1">
                 <span className="font-bold text-[#2C1B57]">
-                  Verihire Verified Talent Directory
+                  Smile Jobs Verified Talent Directory
                 </span>
                 <span className="font-bold text-[#42326E]">54%</span>
               </div>

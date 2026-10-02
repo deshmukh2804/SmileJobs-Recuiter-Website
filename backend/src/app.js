@@ -48,7 +48,7 @@ if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "🚀 Verihire Recruiter Engine API running...",
+    message: "🚀 Smile Jobs Recruiter Engine API running...",
   });
 });
 
