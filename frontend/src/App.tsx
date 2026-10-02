@@ -20,11 +20,13 @@ import {
 import { authService } from './services/authService';
 import { candidateService } from './services/candidateService';
 
+
 // Components
 import { Toast } from './components/Toast';
 import { CandidateDrawer } from './components/CandidateDrawer';
 import { ScheduleInterviewModal } from './components/ScheduleInterviewModal';
 import { InfoModals } from './components/InfoModals';
+
 
 // Views
 import { LandingView } from './components/LandingView';
@@ -40,6 +42,7 @@ import { CompanyProfileView } from './components/CompanyProfileView';
 import { ProfileView } from './components/ProfileView';
 import { SettingsView } from './components/SettingsView';
 import { SubscriptionView } from './components/SubscriptionView';
+
 
 // Icons
 import {
@@ -60,20 +63,31 @@ import {
   UserRound,
 } from 'lucide-react';
 
-// ✅ PREMIUM LOGO COMPONENT
-const AppLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
-  <svg viewBox="0 0 100 100" className={`shrink-0 ${className}`} fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100" height="100" rx="22" fill="url(#logo_grad)"/>
-    <path d="M28 42 Q50 22 72 42" stroke="white" strokeWidth="9" strokeLinecap="round"/>
-    <path d="M28 62 Q50 82 72 62" stroke="#7CE0B0" strokeWidth="9" strokeLinecap="round"/>
-    <defs>
-      <linearGradient id="logo_grad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#2C1B57"/>
-        <stop offset="1" stopColor="#5A4590"/>
-      </linearGradient>
-    </defs>
-  </svg>
-);
+
+// ✅ APP LOGO COMPONENT — uses YOUR uploaded logo.png with smart fallback
+const AppLogo = ({ className = "w-8 h-8" }: { className?: string }) => {
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  if (logoFailed) {
+    // Fallback: branded "SJ" gradient circle if logo.png fails to load
+    return (
+      <div className={`${className} rounded-xl bg-gradient-to-br from-[#42326E] to-[#2C1B57] flex items-center justify-center text-white font-extrabold shadow-md shrink-0`}>
+        <span style={{ fontSize: '0.4em' }}>SJ</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src="/logo.png"
+      alt="Smile Jobs"
+      className={`object-contain shrink-0 ${className}`}
+      style={{ display: 'inline-block', minWidth: '1rem', minHeight: '1rem' }}
+      onError={() => setLogoFailed(true)}
+    />
+  );
+};
+
 
 // ✅ ONE-TIME LOCAL CACHE CLEANUP
 try {
@@ -83,12 +97,15 @@ try {
   }
 } catch {}
 
+
 const PROTECTED_ROUTES: AppRoute[] = ['dashboard', 'post-job', 'edit-job', 'job-details', 'my-jobs', 'candidates', 'shortlisted', 'interviews', 'company', 'profile', 'settings', 'subscription'];
+
 
 const getDisplayEmail = (user?: AuthUser | null): string => {
   if (!user?.email) return '';
   return String(user.email).includes('@phone.verihire.local') ? '' : user.email;
 };
+
 
 const getContactLabel = (user?: AuthUser | null): string => {
   if (!user) return '';
@@ -98,9 +115,11 @@ const getContactLabel = (user?: AuthUser | null): string => {
   return 'Complete your profile';
 };
 
+
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<AppRoute>('landing');
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
+
 
   useEffect(() => {
     const hydrateUser = async () => {
@@ -114,11 +133,13 @@ export default function App() {
     hydrateUser();
   }, []);
 
+
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [viewingJobId, setViewingJobId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
+
 
   const fetchCandidates = useCallback(async () => {
     if (!authUser) { setCandidates([]); return; }
@@ -134,19 +155,23 @@ export default function App() {
     }
   }, [authUser]);
 
+
   useEffect(() => {
     if (authUser && ['dashboard', 'candidates', 'shortlisted', 'interviews'].includes(currentRoute)) {
       fetchCandidates();
     }
   }, [authUser, currentRoute, fetchCandidates]);
 
+
   const [jobs, setJobs] = useState<JobListing[]>(() => loadStoredData(STORAGE_KEYS.JOBS, INITIAL_JOBS));
   const [interviews, setInterviews] = useState<Interview[]>(() => loadStoredData(STORAGE_KEYS.INTERVIEWS, INITIAL_INTERVIEWS));
   const [company, setCompany] = useState<CompanyProfile>(() => loadStoredData(STORAGE_KEYS.COMPANY, INITIAL_COMPANY));
 
+
   useEffect(() => { saveStoredData(STORAGE_KEYS.JOBS, jobs); }, [jobs]);
   useEffect(() => { saveStoredData(STORAGE_KEYS.INTERVIEWS, interviews); }, [interviews]);
   useEffect(() => { saveStoredData(STORAGE_KEYS.COMPANY, company); }, [company]);
+
 
   const [activeCandidate, setActiveCandidate] = useState<Candidate | null>(null);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -156,18 +181,22 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
 
+
   const showToast = useCallback((msg: string) => { setToastMessage(msg); }, []);
   const handleFeatureUnavailable = useCallback(() => { showToast('This feature has been removed.'); }, [showToast]);
+
 
   const handleLoginSuccess = useCallback(async (user: AuthUser) => {
     setAuthUser(user); setCurrentRoute('dashboard'); window.scrollTo({ top: 0, behavior: 'smooth' });
     try { const fresh = await authService.fetchMe(); if (fresh) setAuthUser(fresh); } catch {}
   }, []);
 
+
   const handleLogout = useCallback(async () => {
     await authService.logout(); setAuthUser(null); setCandidates([]); setCurrentRoute('landing');
     showToast('You have been signed out successfully'); setMobileMenuOpen(false);
   }, [showToast]);
+
 
   const handleUpdateAuthUser = useCallback((updates: Partial<AuthUser>) => {
     setAuthUser((prev) => {
@@ -178,7 +207,9 @@ export default function App() {
     });
   }, []);
 
+
   const handleReplaceAuthUser = useCallback((newUser: AuthUser) => { setAuthUser(newUser); }, []);
+
 
   const handleNavigate = useCallback((route: AppRoute) => {
     if (PROTECTED_ROUTES.includes(route) && !authUser) {
@@ -190,22 +221,26 @@ export default function App() {
     setCurrentRoute(route); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [authUser, showToast]);
 
+
   const handleEditJob = useCallback((jobId: string) => {
     if (!authUser) return;
     setEditingJobId(jobId); setViewingJobId(null); setCurrentRoute('edit-job');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [authUser]);
 
+
   const handleViewJob = useCallback((jobId: string) => {
     setViewingJobId(jobId); setEditingJobId(null); setCurrentRoute('job-details');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+
 
   const handleMoveCandidateStage = useCallback(async (candidateId: string, newStage: PipelineStage) => {
     setCandidates((prev) => prev.map((c) => (c.id === candidateId ? { ...c, stage: newStage } : c)));
     showToast(`Candidate moved to ${newStage}`);
     try { await candidateService.updateStage(candidateId, newStage); } catch (err) { fetchCandidates(); }
   }, [showToast, fetchCandidates]);
+
 
   const handleBookmarkToggle = useCallback(async (candidateId: string) => {
     setCandidates((prev) => prev.map((c) => {
@@ -218,11 +253,13 @@ export default function App() {
     try { await candidateService.toggleBookmark(candidateId); } catch (err) { fetchCandidates(); }
   }, [showToast, fetchCandidates]);
 
+
   const handleAddCandidateNote = useCallback(async (candidateId: string, noteText: string) => {
     setCandidates((prev) => prev.map((c) => c.id === candidateId ? { ...c, notes: [...c.notes, noteText] } : c));
     showToast('Internal evaluation note appended');
     try { await candidateService.addNote(candidateId, noteText); } catch (err) { fetchCandidates(); }
   }, [showToast, fetchCandidates]);
+
 
   const handlePublishJob = useCallback(() => setCurrentRoute('my-jobs'), []);
   const handleSaveJobDraft = useCallback(() => setCurrentRoute('my-jobs'), []);
@@ -230,9 +267,11 @@ export default function App() {
     showToast(`Viewing applicants for ${jobTitle}`); setCurrentRoute('candidates');
   }, [showToast]);
 
+
   const handleOpenScheduleModal = useCallback((candidate?: Candidate) => {
     setScheduleCandidate(candidate || candidates[0] || null); setIsScheduleModalOpen(true);
   }, [candidates]);
+
 
   const handleConfirmInterview = useCallback((newInt: Omit<Interview, 'id'>) => {
     const created = { ...newInt, id: `int-${Date.now()}` };
@@ -240,27 +279,33 @@ export default function App() {
     handleMoveCandidateStage(created.candidateId, 'Interview');
   }, [handleMoveCandidateStage]);
 
+
   const handleUpdateInterviewStatus = useCallback((interviewId: string, status: Interview['status']) => {
     setInterviews((prev) => prev.map((i) => (i.id === interviewId ? { ...i, status } : i)));
     showToast(`Interview status set to ${status}`);
   }, [showToast]);
 
+
   const handleResetData = useCallback(() => {
     setJobs(INITIAL_JOBS); setInterviews(INITIAL_INTERVIEWS); setCompany(INITIAL_COMPANY); fetchCandidates();
   }, [fetchCandidates]);
+
 
   const handleSubscriptionSuccess = useCallback(async () => {
     try { const fresh = await authService.fetchMe(); if (fresh) setAuthUser(fresh); } catch {}
     showToast('Subscription activated successfully!'); setCurrentRoute('dashboard');
   }, [showToast]);
 
+
   const getUserInitials = useCallback((name?: string) => {
     if (!name || !name.trim()) return 'R';
     return name.trim().split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   }, []);
 
+
   const sidebarDisplayName = useMemo(() => authUser?.name?.trim() || 'Guest User', [authUser]);
   const sidebarSubline = useMemo(() => authUser?.companyName?.trim() || getContactLabel(authUser), [authUser]);
+
 
   const navItems = useMemo(() => [
     { id: 'dashboard' as AppRoute, label: 'Dashboard', icon: LayoutDashboard },
@@ -271,6 +316,7 @@ export default function App() {
     { id: 'interviews' as AppRoute, label: 'Interviews', icon: Calendar },
   ], []);
 
+
   const secondaryNavItems = useMemo(() => [
     { id: 'profile' as AppRoute, label: 'My Profile', icon: UserRound },
     { id: 'company' as AppRoute, label: 'Company Profile', icon: Building },
@@ -278,9 +324,11 @@ export default function App() {
     { id: 'settings' as AppRoute, label: 'Settings', icon: Settings },
   ], []);
 
+
   return (
     <div className="min-h-screen bg-[#FCFCF7] text-[#29233A] flex flex-col font-sans">
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+
 
       <CandidateDrawer
         candidate={activeCandidate}
@@ -304,6 +352,7 @@ export default function App() {
         }}
       />
 
+
       <ScheduleInterviewModal
         isOpen={isScheduleModalOpen}
         candidate={scheduleCandidate}
@@ -311,11 +360,13 @@ export default function App() {
         onConfirm={handleConfirmInterview}
       />
 
+
       <InfoModals
         type={infoModalType}
         onClose={() => setInfoModalType(null)}
         onSubmitContact={() => showToast('Inquiry dispatched to Smile Jobs talent team')}
       />
+
 
       {currentRoute === 'landing' ? (
         <LandingView
@@ -337,8 +388,8 @@ export default function App() {
           <aside className="hidden lg:flex w-64 bg-[#2C1B57] text-white flex-col h-full shrink-0 border-r border-white/10 select-none">
             <div className="p-5 flex items-center justify-between border-b border-white/10">
               <div onClick={() => handleNavigate('dashboard')} className="flex items-center gap-3 cursor-pointer group">
-                {/* ✅ BRAND LOGO */}
-                <AppLogo className="w-8 h-8 shadow-lg group-hover:scale-105 transition-transform duration-300" />
+                {/* ✅ BRAND LOGO (from /public/logo.png) */}
+                <AppLogo className="w-9 h-9 rounded-xl shadow-lg group-hover:scale-105 transition-transform duration-300" />
                 <span className="font-extrabold text-lg tracking-tight">Smile Jobs</span>
               </div>
               <button onClick={() => handleNavigate('landing')} className="text-[10px] font-bold text-white/50 hover:text-white flex items-center gap-1 transition-colors" title="View Public Site">
@@ -346,6 +397,7 @@ export default function App() {
                 <ExternalLink className="w-3 h-3" />
               </button>
             </div>
+
 
             <div className="flex-1 overflow-y-auto p-3 space-y-1">
               <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40">Workspace</div>
@@ -359,6 +411,7 @@ export default function App() {
                 );
               })}
 
+
               <div className="pt-4 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40">Management</div>
               {secondaryNavItems.map((item) => {
                 const Icon = item.icon;
@@ -370,10 +423,12 @@ export default function App() {
                 );
               })}
 
+
               <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10 transition-all mt-2">
                 <LogOut className="w-4 h-4 shrink-0" /><span>Sign Out</span>
               </button>
             </div>
+
 
             {/* Footer Profile */}
             <div className="p-3 border-t border-white/10">
@@ -393,6 +448,7 @@ export default function App() {
             </div>
           </aside>
 
+
           {/* ═══ Main Area ═══ */}
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             {/* Top Header */}
@@ -402,11 +458,12 @@ export default function App() {
                   <Menu className="w-5 h-5" />
                 </button>
                 <div onClick={() => handleNavigate('dashboard')} className="flex items-center gap-2.5 font-extrabold text-[#2C1B57] cursor-pointer">
-                  {/* ✅ BRAND LOGO (MOBILE) */}
-                  <AppLogo className="w-7 h-7" />
+                  {/* ✅ BRAND LOGO (MOBILE HEADER) */}
+                  <AppLogo className="w-8 h-8 rounded-lg" />
                   <span className="text-lg">Smile Jobs</span>
                 </div>
               </div>
+
 
               <div className="hidden sm:flex items-center gap-2 bg-white border border-[#E8E3EF] rounded-xl px-3 py-1.5 w-72 lg:w-96 shadow-2xs">
                 <Search className="w-4 h-4 text-[#6F687A]" />
@@ -420,6 +477,7 @@ export default function App() {
                 />
               </div>
 
+
               <div className="flex items-center gap-2">
                 {authUser?.subscription?.tier && (
                   <button onClick={() => handleNavigate('subscription')} className={`hidden md:inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all hover:shadow-sm ${authUser.subscription.tier === 'enterprise' ? 'bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200' : authUser.subscription.tier === 'standard' ? 'bg-gradient-to-r from-[#F8F5FF] to-[#EDE6FA] text-[#42326E] border-[#D7C8ED]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
@@ -430,12 +488,15 @@ export default function App() {
                   </button>
                 )}
 
+
                 <div className="h-6 w-px bg-[#E8E3EF] mx-1" />
+
 
                 <button onClick={() => handleNavigate('landing')} className="px-3 py-1.5 text-xs font-bold text-[#49454F] hover:text-[#2C1B57] hover:bg-white rounded-xl transition-colors hidden sm:flex items-center gap-1.5">
                   <span>Public View</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </button>
+
 
                 <button onClick={handleLogout} className="px-3 py-1.5 text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors hidden sm:flex items-center gap-1.5">
                   <LogOut className="w-3.5 h-3.5" />
@@ -444,19 +505,22 @@ export default function App() {
               </div>
             </header>
 
+
             {/* ═══ Mobile Drawer ═══ */}
             {mobileMenuOpen && (
               <div className="fixed inset-0 z-50 lg:hidden flex">
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setMobileMenuOpen(false)} />
                 <div className="relative w-64 bg-[#2C1B57] text-white flex flex-col h-full shadow-2xl z-10 animate-in slide-in-from-left duration-200">
                   <div className="p-4 flex items-center justify-between border-b border-white/10">
-                    <span className="font-extrabold text-base flex items-center gap-2">
-                      <AppLogo className="w-6 h-6" /> Smile Jobs
+                    <span className="font-extrabold text-base flex items-center gap-2.5">
+                      {/* ✅ BRAND LOGO (MOBILE DRAWER) */}
+                      <AppLogo className="w-8 h-8 rounded-lg" /> Smile Jobs
                     </span>
                     <button onClick={() => setMobileMenuOpen(false)} className="p-1 rounded-lg text-white/70 hover:text-white">
                       <X className="w-5 h-5" />
                     </button>
                   </div>
+
 
                   <div className="p-3 border-b border-white/10">
                     <div className="flex items-center gap-3 p-2">
@@ -474,6 +538,7 @@ export default function App() {
                     </div>
                   </div>
 
+
                   <div className="flex-1 overflow-y-auto p-3 space-y-1">
                     {navItems.map((item) => {
                       const Icon = item.icon;
@@ -484,6 +549,7 @@ export default function App() {
                         </button>
                       );
                     })}
+
 
                     <div className="pt-4 border-t border-white/10 mt-2 space-y-1">
                       {secondaryNavItems.map((item) => {
@@ -504,6 +570,7 @@ export default function App() {
               </div>
             )}
 
+
             {/* ═══ Page Content Router ═══ */}
             <main className="flex-1 overflow-y-auto bg-[#FCFCF7]">
               {currentRoute === 'dashboard' && (
@@ -517,6 +584,7 @@ export default function App() {
                 />
               )}
 
+
               {(currentRoute === 'post-job' || (currentRoute === 'edit-job' && editingJobId)) && (
                 <PostJobView
                   onPublishJob={handlePublishJob}
@@ -528,13 +596,16 @@ export default function App() {
                 />
               )}
 
+
               {currentRoute === 'job-details' && viewingJobId && (
                 <JobDetailsView jobId={viewingJobId} onNavigate={handleNavigate} onEditJob={handleEditJob} onShowToast={showToast} />
               )}
 
+
               {currentRoute === 'my-jobs' && (
                 <MyJobsView onNavigate={handleNavigate} onEditJob={handleEditJob} onViewJob={handleViewJob} onViewApplicants={handleViewApplicants} onShowToast={showToast} />
               )}
+
 
               {currentRoute === 'candidates' && (
                 <>
@@ -560,6 +631,7 @@ export default function App() {
                 </>
               )}
 
+
               {currentRoute === 'shortlisted' && (
                 <ShortlistedView
                   candidates={candidates}
@@ -569,6 +641,7 @@ export default function App() {
                   onNavigate={handleNavigate}
                 />
               )}
+
 
               {currentRoute === 'interviews' && (
                 <InterviewsView
@@ -581,6 +654,7 @@ export default function App() {
                 />
               )}
 
+
               {currentRoute === 'company' && (
                 <CompanyProfileView
                   company={company}
@@ -591,13 +665,16 @@ export default function App() {
                 />
               )}
 
+
               {currentRoute === 'profile' && (
                 <ProfileView onShowToast={showToast} onUserUpdate={handleReplaceAuthUser} />
               )}
 
+
               {currentRoute === 'settings' && (
                 <SettingsView onResetData={handleResetData} onShowToast={showToast} onUserUpdate={handleReplaceAuthUser} />
               )}
+
 
               {currentRoute === 'subscription' && (
                 <SubscriptionView authUser={authUser} onSuccess={handleSubscriptionSuccess} onBack={() => handleNavigate('dashboard')} />
