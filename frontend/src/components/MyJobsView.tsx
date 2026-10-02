@@ -1,31 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppRoute } from '../types';
 import { jobService } from '../services/jobService';
-import {
-  Plus,
-  Search,
-  MoreVertical,
-  PauseCircle,
-  PlayCircle,
-  XCircle,
-  Trash2,
-  Edit3,
-  Users,
-  MapPin,
-  Star,
-  StarOff,
-  Eye,
-  Loader2,
-  Briefcase,
-  RefreshCw,
-  Calendar,
-  CheckCircle2,
-  AlertTriangle,
-  X,
-  ExternalLink,
-  ShieldCheck,
-  ChevronDown,
-} from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════════════
    INTERFACES
@@ -79,15 +54,10 @@ interface BackendJob {
   recruiterMobileNumber?: string;
   recruiterWhatsappNumber?: string;
   contactVisibility?: { whatsapp?: boolean; mobile?: boolean };
+  jobDescription?: string;
+  qualification?: string;
+  companyInitials?: string;
 }
-
-const STATUS_FILTERS = [
-  { key: 'all', label: 'All Jobs' },
-  { key: 'Live', label: 'Active' },
-  { key: 'Draft', label: 'Draft' },
-  { key: 'Paused', label: 'Paused' },
-  { key: 'Closed', label: 'Closed' },
-];
 
 /* ═══════════════════════════════════════════════════════════════════════
    HELPERS
@@ -126,13 +96,14 @@ const formatSalary = (min?: number, max?: number, currency?: string, period?: st
   return 'Not disclosed';
 };
 
-const formatExperience = (min?: number, max?: number, text?: string): string => {
-  if (text) return text;
-  if (min !== undefined && max !== undefined && (min > 0 || max > 0)) {
-    if (min === max) return `${min} yr${min > 1 ? 's' : ''}`;
-    return `${min}-${max} yrs`;
-  }
-  return 'Any';
+const getInitials = (name?: string): string => {
+  if (!name) return 'CO';
+  return name
+    .split(' ')
+    .map(w => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -148,26 +119,31 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
   const [jobs, setJobs] = useState<BackendJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'All' | 'Live' | 'Draft' | 'Paused' | 'Closed'>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeMenuJobId, setActiveMenuJobId] = useState<string | null>(null);
+  const [jobTypeFilter, setJobTypeFilter] = useState('All');
+  const [workModeFilter, setWorkModeFilter] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'applicants'>('newest');
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const fetchJobs = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
-    setError(null);
+    setApiError(null);
     try {
       const res = await jobService.listMyJobs();
       const list = res.data?.jobs || res.data || [];
       setJobs(Array.isArray(list) ? list : []);
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to load jobs');
+      setApiError(err.response?.data?.message || err.message || 'Failed to load jobs');
       setJobs([]);
     } finally {
       setLoading(false);
@@ -175,27 +151,9 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     }
   }, []);
 
-  useEffect(() => { fetchJobs(); }, [fetchJobs]);
-
   useEffect(() => {
-    if (successMsg) {
-      const t = setTimeout(() => setSuccessMsg(null), 3000);
-      return () => clearTimeout(t);
-    }
-  }, [successMsg]);
-
-  // Dropdown automatic dismiss handler
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setActiveMenuJobId(null);
-      }
-    };
-    if (activeMenuJobId) {
-      document.addEventListener('mousedown', handler);
-      return () => document.removeEventListener('mousedown', handler);
-    }
-  }, [activeMenuJobId]);
+    fetchJobs();
+  }, [fetchJobs]);
 
   // SAFE DYNAMIC PAYLOAD BUILDER: Prevents array deletion on partial updates
   const prepareJobPayload = (job: BackendJob, updates: Partial<BackendJob>) => {
@@ -203,82 +161,80 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     return {
       title: merged.title,
       companyName: merged.companyName,
-      companyWebsite: merged.companyWebsite || "",
-      industry: merged.industry || "",
+      companyWebsite: merged.companyWebsite || '',
+      industry: merged.industry || '',
       establishedYear: merged.establishedYear || null,
-      organizationSize: merged.organizationSize || "",
-      department: merged.department || "",
+      organizationSize: merged.organizationSize || '',
+      department: merged.department || '',
       role: merged.role || merged.title,
-      qualification: merged.qualification || "",
-      jobType: merged.jobType || "Full-Time",
-      workMode: merged.workMode || "On-site",
-      jobDescription: merged.jobDescription || "",
-      jobTiming: merged.jobTiming || "",
-      workingDays: merged.workingDays || "",
-      noticePeriod: merged.noticePeriod || "",
-      applicationUrl: merged.applicationUrl || "",
+      qualification: merged.qualification || '',
+      jobType: merged.jobType || 'Full-Time',
+      workMode: merged.workMode || 'On-site',
+      jobDescription: merged.jobDescription || '',
+      jobTiming: merged.jobTiming || '',
+      workingDays: merged.workingDays || '',
+      noticePeriod: merged.noticePeriod || '',
+      applicationUrl: merged.applicationUrl || '',
       noPaymentInvolved: merged.noPaymentInvolved !== false,
       featured: !!merged.featured,
       status: merged.status,
-      // Pass safe values or arrays (splitCSV handles them safely on backend)
       skills: merged.skills || [],
       languages: merged.languages || [],
       benefits: merged.benefits || [],
       responsibilities: merged.responsibilities || [],
       requirements: merged.requirements || [],
       location: {
-        address: merged.location?.address || "",
-        city: merged.location?.city || "",
-        state: merged.location?.state || "",
-        country: merged.location?.country || "India",
+        address: merged.location?.address || '',
+        city: merged.location?.city || '',
+        state: merged.location?.state || '',
+        country: merged.location?.country || 'India',
       },
       salary: {
         min: merged.salary?.min || 0,
         max: merged.salary?.max || 0,
-        currency: merged.salary?.currency || "INR",
-        period: merged.salary?.period || "month",
+        currency: merged.salary?.currency || 'INR',
+        period: merged.salary?.period || 'month',
       },
       experience: {
         min: merged.experience?.min || 0,
         max: merged.experience?.max || 0,
-        text: merged.experience?.text || "",
+        text: merged.experience?.text || '',
       },
       contactPerson: {
-        name: merged.contactPerson?.name || "",
-        designation: merged.contactPerson?.designation || "",
+        name: merged.contactPerson?.name || '',
+        designation: merged.contactPerson?.designation || '',
       },
       contactVisibility: {
         whatsapp: merged.contactVisibility?.whatsapp !== false,
         mobile: merged.contactVisibility?.mobile !== false,
       },
-      recruiterEmail: merged.recruiterEmail || "",
-      recruiterMobileNumber: merged.recruiterMobileNumber || "",
-      recruiterWhatsappNumber: merged.recruiterWhatsappNumber || "",
+      recruiterEmail: merged.recruiterEmail || '',
+      recruiterMobileNumber: merged.recruiterMobileNumber || '',
+      recruiterWhatsappNumber: merged.recruiterWhatsappNumber || '',
     };
   };
 
   const filteredJobs = useMemo(() => {
-    let list = jobs.filter(job => {
-      const matchesStatus = filterStatus === 'all' || job.status === filterStatus;
+    return jobs.filter(job => {
+      if (activeTab !== 'All' && job.status !== activeTab) return false;
       const q = searchQuery.trim().toLowerCase();
-      const matchesSearch = !q ||
-        job.title?.toLowerCase().includes(q) ||
-        job.department?.toLowerCase().includes(q) ||
-        job.location?.city?.toLowerCase().includes(q) ||
-        job.role?.toLowerCase().includes(q) ||
-        job.companyName?.toLowerCase().includes(q);
-      return matchesStatus && matchesSearch;
+      if (q) {
+        const matchesSearch =
+          job.title?.toLowerCase().includes(q) ||
+          job.department?.toLowerCase().includes(q) ||
+          job.location?.city?.toLowerCase().includes(q) ||
+          job.role?.toLowerCase().includes(q) ||
+          job.companyName?.toLowerCase().includes(q) ||
+          job._id?.toLowerCase().includes(q);
+        if (!matchesSearch) return false;
+      }
+      if (workModeFilter !== 'All' && job.workMode !== workModeFilter) return false;
+      if (jobTypeFilter !== 'All' && job.jobType !== jobTypeFilter) return false;
+      return true;
     });
-    list.sort((a, b) => {
-      if (sortBy === 'applicants') return (b.applicantsCount || 0) - (a.applicantsCount || 0);
-      const aDate = new Date(a.postedAt || a.createdAt || 0).getTime();
-      const bDate = new Date(b.postedAt || b.createdAt || 0).getTime();
-      return sortBy === 'newest' ? bDate - aDate : aDate - bDate;
-    });
-    return list;
-  }, [jobs, filterStatus, searchQuery, sortBy]);
+  }, [jobs, activeTab, searchQuery, workModeFilter, jobTypeFilter]);
 
-  const stats = useMemo(() => ({
+  const counts = useMemo(() => ({
     total: jobs.length,
     live: jobs.filter(j => j.status === 'Live').length,
     draft: jobs.filter(j => j.status === 'Draft').length,
@@ -291,554 +247,574 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
   /* ═══ ACTIONS ═══ */
   const handleStatusChange = async (jobId: string, newStatus: 'Live' | 'Draft' | 'Paused' | 'Closed') => {
     setActionLoading(jobId);
-    setActiveMenuJobId(null);
-    setError(null);
     try {
       await jobService.updateStatus(jobId, newStatus);
       setJobs(prev => prev.map(j => j._id === jobId ? { ...j, status: newStatus, isActive: newStatus !== 'Closed' } : j));
-      const msgs: Record<string, string> = { Live: '✓ Job activated successfully', Paused: '⏸ Job paused', Closed: '✕ Job closed', Draft: '✎ Moved to draft' };
-      setSuccessMsg(msgs[newStatus] || 'Status updated');
-      onShowToast?.(msgs[newStatus] || 'Status updated');
+      const msgs: Record<string, string> = {
+        Live: 'Job activated successfully',
+        Paused: 'Job paused',
+        Closed: 'Job closed',
+        Draft: 'Moved to draft',
+      };
+      showToast(msgs[newStatus] || 'Status updated', 'success');
+      onShowToast?.(msgs[newStatus]);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update job status');
+      showToast(err.response?.data?.message || 'Failed to update status', 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleToggleFeatured = async (job: BackendJob) => {
+  const handleToggleFeature = async (job: BackendJob) => {
     setActionLoading(job._id);
-    setActiveMenuJobId(null);
-    setError(null);
     try {
-      // Safe Payload wrapped to safeguard arrays from wiping out on partial updates
       const safePayload = prepareJobPayload(job, { featured: !job.featured });
       await jobService.updateJob(job._id, safePayload);
-      
       setJobs(prev => prev.map(j => j._id === job._id ? { ...j, featured: !j.featured } : j));
-      const msg = !job.featured ? '⭐ Job featured on listing' : 'Job unfeatured';
-      setSuccessMsg(msg);
-      onShowToast?.(msg);
+      showToast(!job.featured ? 'Job featured on listing' : 'Job unfeatured', 'success');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to toggle featured status');
+      showToast(err.response?.data?.message || 'Failed to toggle feature', 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleDelete = async (jobId: string) => {
-    setActionLoading(jobId);
-    setConfirmDeleteId(null);
-    setError(null);
+  const handleToggleStatus = async (job: BackendJob) => {
+    const newStatus = job.status === 'Live' ? 'Paused' : 'Live';
+    await handleStatusChange(job._id, newStatus);
+  };
+
+  const handleDeleteJob = async (id: string) => {
+    setIsDeleting(true);
     try {
-      await jobService.deleteJob(jobId);
-      setJobs(prev => prev.filter(j => j._id !== jobId));
-      setSuccessMsg('🗑 Job listing deleted successfully');
-      onShowToast?.('Job deleted successfully');
+      await jobService.deleteJob(id);
+      setJobs(prev => prev.filter(j => j._id !== id));
+      setConfirmDeleteId(null);
+      showToast('Job deleted successfully!', 'success');
+      onShowToast?.('Job deleted');
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to delete job');
+      setConfirmDeleteId(null);
+      showToast(err.response?.data?.message || 'Failed to delete job', 'error');
     } finally {
-      setActionLoading(null);
+      setIsDeleting(false);
     }
   };
 
-  const handleEdit = (jobId: string) => {
-    setActiveMenuJobId(null);
-    onEditJob ? onEditJob(jobId) : onShowToast?.('Edit function not configured');
-  };
-
-  const handleView = (jobId: string) => {
-    setActiveMenuJobId(null);
+  const handleViewJob = (jobId: string) => {
     onViewJob ? onViewJob(jobId) : window.open(`/jobs/${jobId}`, '_blank');
   };
 
-  const getStatusBadge = (status: BackendJob['status']) => {
-    const configs: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-      Live: { bg: 'bg-emerald-100/70 text-emerald-800 border border-emerald-200', text: 'text-emerald-800', dot: 'bg-emerald-500 animate-pulse', label: 'Active' },
-      Draft: { bg: 'bg-slate-100 text-slate-700 border border-slate-200', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Draft' },
-      Paused: { bg: 'bg-amber-100/70 text-amber-800 border border-amber-200', text: 'text-amber-700', dot: 'bg-amber-500', label: 'Paused' },
-      Closed: { bg: 'bg-rose-100/70 text-rose-800 border border-rose-200', text: 'text-rose-700', dot: 'bg-rose-500', label: 'Closed' },
-    };
-    const c = configs[status] || configs.Draft;
-    return (
-      <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full ${c.bg} inline-flex items-center gap-1.5`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-        {c.label}
-      </span>
-    );
+  const handleEditJob = (jobId: string) => {
+    onEditJob ? onEditJob(jobId) : showToast('Edit function not configured', 'error');
   };
 
-  /* ═══ LOADING STATE ═══ */
-  if (loading) {
-    return (
-      <div className="p-8 flex flex-col items-center justify-center min-h-[420px] gap-3">
-        <Loader2 className="w-10 h-10 animate-spin text-[#42326E]" />
-        <p className="text-sm text-[#6F687A] font-semibold animate-pulse">Syncing with database...</p>
-      </div>
-    );
-  }
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setJobTypeFilter('All');
+    setWorkModeFilter('All');
+    setActiveTab('All');
+  };
 
-  /* ═══ RENDER ═══ */
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-200">
+    <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-5">
+      {/* ─── Toast ─── */}
+      {toast && (
+        <div
+          className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border animate-in slide-in-from-right duration-200 ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <span className="material-symbols-outlined text-[18px]">
+              {toast.type === 'success' ? 'check_circle' : 'error'}
+            </span>
+            <span>{toast.msg}</span>
+          </div>
+        </div>
+      )}
 
-      {/* Header Panel */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-[#E8E3EF] p-5 rounded-2xl shadow-xs">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] tracking-tight flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#F8F5FF] flex items-center justify-center shrink-0">
-              <Briefcase className="w-5.5 h-5.5 text-[#42326E]" />
+      {/* ─── Delete Confirmation Modal ─── */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-200 p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
+                <span className="material-symbols-outlined text-rose-600 text-[24px]">delete_forever</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-[#2C1B57]">Delete Job Listing?</h3>
+                <p className="text-xs text-[#6F687A]">This action cannot be undone.</p>
+              </div>
             </div>
-            Job Console
-          </h1>
-          <p className="text-xs text-[#6F687A] mt-1.5 ml-0.5">
-            Manage, toggle, analyze, and oversee recruiter postings in real-time.
+            <p className="text-sm text-[#49454F] my-4 leading-relaxed">
+              Are you sure you want to permanently delete this job listing? Shared company logos used by other
+              jobs or your recruiter profile will be <strong>preserved automatically</strong>.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-lg bg-[#F8F5FF] text-[#49454F] text-sm font-semibold hover:bg-[#EDE6FA] cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteJob(confirmDeleteId)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 cursor-pointer flex items-center gap-1.5 disabled:opacity-70"
+              >
+                {isDeleting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    Yes, Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Error Banner ─── */}
+      {apiError && (
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+          <span className="material-symbols-outlined text-[16px]">cloud_off</span>
+          <span className="flex-1">Backend connection issue: {apiError}</span>
+          <button onClick={() => fetchJobs()} className="text-amber-700 hover:underline font-bold">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* ─── Header ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded text-[10px] bg-[#EDE6FA] text-[#42326E] font-bold">
+              Recruiter Console
+            </span>
+            {(loading || refreshing) && (
+              <span className="w-3 h-3 border-2 border-[#42326E]/30 border-t-[#42326E] rounded-full animate-spin" />
+            )}
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2C1B57] mt-1 tracking-tight">My Job Listings</h1>
+          <p className="text-sm text-[#6F687A]">
+            Review, edit, feature, and manage your posted career opportunities.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => fetchJobs(true)}
             disabled={refreshing}
-            className="p-2.5 bg-white border border-[#E8E3EF] hover:bg-[#F8F5FF] hover:border-[#D7C8ED] text-[#49454F] rounded-xl transition-all disabled:opacity-50"
-            title="Reload Jobs"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E8E3EF] bg-white text-[#49454F] font-medium hover:bg-[#F8F5FF] hover:border-[#D7C8ED] shadow-xs transition-colors cursor-pointer text-sm disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className={`material-symbols-outlined text-[18px] ${refreshing ? 'animate-spin' : ''}`}>refresh</span>
+            <span className="hidden sm:inline">Refresh</span>
           </button>
           <button
             onClick={() => onNavigate('post-job')}
-            className="px-5 py-2.5 bg-[#42326E] hover:bg-[#322554] text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#42326E] text-white font-bold shadow-md hover:bg-[#322554] transition-all cursor-pointer text-sm active:scale-95"
           >
-            <Plus className="w-4.5 h-4.5" />
+            <span className="material-symbols-outlined text-[18px]">add</span>
             <span>Post New Job</span>
           </button>
         </div>
       </div>
 
-      {/* Action Notifications */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 animate-in slide-in-from-top duration-200">
-          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
-          <span className="text-xs text-red-700 font-semibold flex-1">{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
-        </div>
-      )}
-      {successMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3 animate-in slide-in-from-top duration-200">
-          <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-          <span className="text-xs text-emerald-700 font-semibold flex-1">{successMsg}</span>
-          <button onClick={() => setSuccessMsg(null)} className="text-[#5F8A72] hover:text-[#24593C]"><X className="w-4 h-4" /></button>
-        </div>
-      )}
-
-      {/* Interactive Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-        <StatCard label="Total Posts" value={stats.total} icon={Briefcase} color="purple" onClick={() => setFilterStatus('all')} active={filterStatus === 'all'} />
-        <StatCard label="Live Jobs" value={stats.live} icon={PlayCircle} color="emerald" onClick={() => setFilterStatus('Live')} active={filterStatus === 'Live'} />
-        <StatCard label="Saved Drafts" value={stats.draft} icon={Edit3} color="gray" onClick={() => setFilterStatus('Draft')} active={filterStatus === 'Draft'} />
-        <StatCard label="Paused" value={stats.paused} icon={PauseCircle} color="amber" onClick={() => setFilterStatus('Paused')} active={filterStatus === 'Paused'} />
-        <StatCard label="Featured" value={stats.featured} icon={Star} color="yellow" />
-        <StatCard label="Total Applicants" value={stats.totalApplicants} icon={Users} color="blue" />
+      {/* ─── KPI Cards ─── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {[
+          { label: 'Total Jobs', value: counts.total, icon: 'list_alt' },
+          { label: 'Live', value: counts.live, icon: 'check_circle', filter: 'Live' as const },
+          { label: 'Draft', value: counts.draft, icon: 'edit_note', filter: 'Draft' as const },
+          { label: 'Paused', value: counts.paused, icon: 'pause_circle', filter: 'Paused' as const },
+          { label: 'Closed', value: counts.closed, icon: 'cancel', filter: 'Closed' as const },
+        ].map(kpi => (
+          <div
+            key={kpi.label}
+            onClick={() => kpi.filter && setActiveTab(kpi.filter)}
+            className={`bg-white p-4 rounded-xl border border-[#E8E3EF] shadow-xs transition-all ${
+              kpi.filter ? 'cursor-pointer hover:border-[#42326E] hover:shadow-md' : ''
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-[#6F687A] text-xs">{kpi.label}</span>
+              <span className="p-1.5 rounded-lg bg-[#F8F5FF]">
+                <span className="material-symbols-outlined text-[16px] text-[#42326E]">{kpi.icon}</span>
+              </span>
+            </div>
+            <h3 className="text-2xl text-[#2C1B57] font-extrabold tracking-tight mt-2">
+              {kpi.value.toLocaleString()}
+            </h3>
+          </div>
+        ))}
       </div>
 
-      {/* Filter and Control Bar */}
-      <div className="bg-white border border-[#E8E3EF] p-4 rounded-2xl shadow-xs space-y-3.5">
-        {/* Horizontal Status Filter Scroll */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
-          {STATUS_FILTERS.map(f => {
-            const count = f.key === 'all' ? jobs.length : jobs.filter(j => j.status === f.key).length;
-            return (
-              <button
-                key={f.key}
-                onClick={() => setFilterStatus(f.key)}
-                className={`px-4 py-2 text-xs font-bold rounded-xl transition-all shrink-0 flex items-center gap-2 border ${
-                  filterStatus === f.key
-                    ? 'bg-[#2C1B57] text-white border-[#2C1B57] shadow-sm'
-                    : 'bg-[#FCFCF7] text-[#49454F] border-[#E8E3EF] hover:border-[#D7C8ED] hover:bg-[#F8F5FF]'
-                }`}
-              >
-                {f.label}
-                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
-                  filterStatus === f.key ? 'bg-white/20 text-white' : 'bg-[#F2F4F7] text-[#6F687A]'
-                }`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+      {/* ─── Tabs ─── */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#E8E3EF] pb-2">
+        {[
+          { key: 'All' as const, label: 'All Jobs', count: counts.total },
+          { key: 'Live' as const, label: 'Live', count: counts.live },
+          { key: 'Draft' as const, label: 'Draft', count: counts.draft },
+          { key: 'Paused' as const, label: 'Paused', count: counts.paused },
+          { key: 'Closed' as const, label: 'Closed', count: counts.closed },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === tab.key
+                ? 'bg-[#42326E] text-white shadow-xs'
+                : 'bg-[#F8F5FF] text-[#49454F] hover:bg-[#EDE6FA]'
+            }`}
+          >
+            <span>{tab.label}</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                activeTab === tab.key ? 'bg-white/20' : 'bg-black/5'
+              }`}
+            >
+              {tab.count.toLocaleString()}
+            </span>
+          </button>
+        ))}
+      </div>
 
-        {/* Search Input and Sorting Dropdown */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+      {/* ─── Filter Toolbar ─── */}
+      <div className="bg-white p-4 rounded-xl border border-[#E8E3EF] shadow-xs">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-[#6F687A] absolute left-3 top-1/2 -translate-y-1/2" />
+            <span className="material-symbols-outlined text-[18px] text-[#98A2B3] absolute left-3 top-1/2 -translate-y-1/2">
+              search
+            </span>
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search title, department, city or role..."
-              className="w-full pl-9.5 pr-8 py-2.5 text-xs bg-white border border-[#E8E3EF] rounded-xl outline-none focus:border-[#42326E] focus:ring-2 focus:ring-[#42326E]/10 transition-all"
+              placeholder="Search job title, department, city, role..."
+              className="w-full pl-9 pr-8 py-2 rounded-lg bg-[#FAFAFA] text-[#1D2939] border border-[#E8E3EF] focus:outline-none focus:border-[#42326E] text-xs"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#98A2B3] hover:text-[#49454F]">
-                <X className="w-4 h-4" />
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#98A2B3] hover:text-[#49454F]"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
               </button>
             )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[10px] font-bold text-[#6F687A] uppercase tracking-wider ml-1">Sort:</span>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as any)}
-              className="text-xs font-semibold py-2.5 px-3 bg-white border border-[#E8E3EF] rounded-xl outline-none focus:border-[#42326E] cursor-pointer hover:border-[#D7C8ED]"
+              value={jobTypeFilter}
+              onChange={e => setJobTypeFilter(e.target.value)}
+              className="px-2.5 py-2 rounded-lg bg-[#FAFAFA] text-[#1D2939] border border-[#E8E3EF] focus:outline-none focus:border-[#42326E] cursor-pointer"
             >
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-              <option value="applicants">Top Applicants</option>
+              <option value="All">Job Type: All</option>
+              <option value="Full-Time">Full-Time</option>
+              <option value="Part-Time">Part-Time</option>
+              <option value="Contract">Contract</option>
+              <option value="Internship">Internship</option>
             </select>
+
+            <select
+              value={workModeFilter}
+              onChange={e => setWorkModeFilter(e.target.value)}
+              className="px-2.5 py-2 rounded-lg bg-[#FAFAFA] text-[#1D2939] border border-[#E8E3EF] focus:outline-none focus:border-[#42326E] cursor-pointer"
+            >
+              <option value="All">Mode: All</option>
+              <option value="On-site">On-site</option>
+              <option value="Hybrid">Hybrid</option>
+              <option value="Remote">Remote</option>
+            </select>
+
+            <button
+              onClick={clearAllFilters}
+              className="px-2.5 py-2 rounded-lg text-[#6F687A] hover:text-[#42326E] flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+              <span>Reset</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Empty Fallback Screen */}
-      {jobs.length === 0 && !loading && (
-        <div className="bg-white rounded-2xl border border-[#E8E3EF] p-12 text-center max-w-lg mx-auto">
-          <div className="w-16 h-16 rounded-2xl bg-[#F8F5FF] mx-auto flex items-center justify-center mb-4">
-            <Briefcase className="w-8 h-8 text-[#42326E]" />
-          </div>
-          <h3 className="text-xl font-extrabold text-[#2C1B57] mb-2">No Active Listings</h3>
-          <p className="text-sm text-[#6F687A] max-w-sm mx-auto mb-6">Establish your first career opportunity listing to start collecting talent pipeline matches.</p>
+      {/* ─── Job List ─── */}
+      {loading && filteredJobs.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-xl border border-[#E8E3EF]">
+          <span className="w-8 h-8 border-3 border-[#42326E]/30 border-t-[#42326E] rounded-full animate-spin inline-block mb-3" />
+          <p className="font-semibold text-[#6F687A]">Loading your jobs from database...</p>
+        </div>
+      ) : filteredJobs.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-xl border border-[#E8E3EF]">
+          <span className="material-symbols-outlined text-6xl text-[#98A2B3] mb-3">work_off</span>
+          <p className="font-extrabold text-[#2C1B57] mb-1">No job listings found</p>
+          <p className="text-xs text-[#6F687A] mb-4">
+            {jobs.length === 0 ? 'Create your first job to attract talent.' : 'Try relaxing your filters.'}
+          </p>
           <button
             onClick={() => onNavigate('post-job')}
-            className="px-6 py-3 bg-[#42326E] hover:bg-[#322554] text-white text-xs font-bold rounded-xl shadow-md inline-flex items-center gap-2 transition-all"
+            className="px-4 py-2 rounded-lg bg-[#42326E] text-white text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 hover:bg-[#322554] transition-colors"
           >
-            <Plus className="w-4 h-4" /> Post Your First Job
+            <span className="material-symbols-outlined text-[16px]">add</span>
+            Post New Job
           </button>
         </div>
-      )}
-
-      {/* ═══ DESKTOP CONSOLE VIEW (Sleek Admin-Grade Table) ═══ */}
-      {jobs.length > 0 && (
-        <>
-          <div className="hidden md:block bg-white rounded-2xl border border-[#E8E3EF] shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-[#FAFAFA] border-b border-[#E8E3EF] text-[#6F687A] font-bold uppercase tracking-wider text-[10px]">
-                    <th className="py-4 px-6">Opportunity details</th>
-                    <th className="py-4 px-4">Location</th>
-                    <th className="py-4 px-4">Salary bandwidth</th>
-                    <th className="py-4 px-4">Exp</th>
-                    <th className="py-4 px-4">Timeline</th>
-                    <th className="py-4 px-4 text-center">Applicants</th>
-                    <th className="py-4 px-4">Status</th>
-                    <th className="py-4 px-6 text-right">Console actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#EFEAF6]">
-                  {filteredJobs.map(job => (
-                    <tr key={job._id} className="hover:bg-[#FAFAFA]/50 transition-colors group">
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          {job.companyLogo?.url ? (
-                            <img src={job.companyLogo.url} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0 border border-[#E8E3EF] shadow-xs" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-xl bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-xs shrink-0 uppercase">
-                              {job.companyName?.slice(0, 2) || 'CF'}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <button onClick={() => handleView(job._id)} className="font-extrabold text-sm text-[#2C1B57] hover:text-[#42326E] truncate hover:underline text-left leading-tight">
-                                {job.title}
-                              </button>
-                              {job.featured && (
-                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[9px] font-bold border border-amber-200">
-                                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-500" /> Featured
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-[#6F687A] mt-1 font-medium truncate">
-                              {job.department || 'General'} • {job.role || 'N/A'}
-                            </div>
-                            {job.skills && job.skills.length > 0 && (
-                              <div className="flex gap-1 mt-1.5 flex-wrap">
-                                {job.skills.slice(0, 3).map((s, i) => (
-                                  <span key={i} className="px-1.5 py-0.5 bg-[#EDE6FA] rounded-md text-[9px] text-[#42326E] font-semibold border border-[#D7C8ED]">{s}</span>
-                                ))}
-                                {job.skills.length > 3 && <span className="text-[9px] text-[#98A2B3] self-center ml-0.5 font-bold">+{job.skills.length - 3} more</span>}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="font-bold flex items-center gap-1 text-[#49454F]">
-                          <MapPin className="w-3.5 h-3.5 text-[#98A2B3]" />
-                          {job.location?.city || 'N/A'}
-                        </div>
-                        <div className="text-[10px] text-[#98A2B3] mt-1 font-medium">{job.workMode}</div>
-                      </td>
-                      <td className="py-4 px-4 text-[#49454F] font-extrabold text-[11px] font-mono">
-                        {formatSalary(job.salary?.min, job.salary?.max, job.salary?.currency, job.salary?.period)}
-                      </td>
-                      <td className="py-4 px-4 text-[#49454F] font-bold text-[11px]">
-                        {formatExperience(job.experience?.min, job.experience?.max, job.experience?.text)}
-                      </td>
-                      <td className="py-4 px-4 text-[#6F687A] font-semibold text-[11px]">
-                        {formatDate(job.postedAt || job.createdAt)}
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <button onClick={() => onViewApplicants?.(job._id, job.title)} className="inline-flex items-center gap-1.5 font-extrabold text-sm text-[#2C1B57] hover:text-[#42326E] hover:underline bg-[#F8F5FF] border border-[#D7C8ED] px-2.5 py-1 rounded-lg">
-                          <Users className="w-4 h-4 text-[#B29CFE]" />
-                          {job.applicantsCount || 0}
-                        </button>
-                      </td>
-                      <td className="py-4 px-4">{getStatusBadge(job.status)}</td>
-                      <td className="py-4 px-6 text-right relative">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button onClick={() => handleView(job._id)} className="p-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl transition-all" title="View Listing Page">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleEdit(job._id)} className="px-3 py-2 bg-[#EDE6FA] text-[#42326E] hover:bg-[#D7C8ED] text-xs font-bold rounded-xl transition-all inline-flex items-center gap-1.5" title="Modify Opportunity">
-                            <Edit3 className="w-3.5 h-3.5" /> Edit
-                          </button>
-                          <div className="relative">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setActiveMenuJobId(activeMenuJobId === job._id ? null : job._id); }}
-                              disabled={actionLoading === job._id}
-                              className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-gray-100 rounded-xl transition-all disabled:opacity-50"
-                            >
-                              {actionLoading === job._id ? <Loader2 className="w-4 h-4 animate-spin text-[#42326E]" /> : <MoreVertical className="w-4 h-4" />}
-                            </button>
-
-                            {activeMenuJobId === job._id && (
-                              <div ref={menuRef} className="absolute right-0 top-10.5 z-40 w-48 bg-white border border-[#E8E3EF] rounded-xl shadow-xl py-1 text-xs font-semibold animate-in fade-in slide-in-from-top-2 duration-150">
-                                <MenuBtn icon={Eye} label="View Public Listing" onClick={() => handleView(job._id)} color="text-blue-700" />
-                                <MenuBtn icon={Edit3} label="Modify Details" onClick={() => handleEdit(job._id)} color="text-[#42326E]" />
-                                <MenuBtn
-                                  icon={job.featured ? StarOff : Star}
-                                  label={job.featured ? 'Unfeature Job' : 'Feature Listing'}
-                                  onClick={() => handleToggleFeatured(job)}
-                                  color="text-amber-700"
-                                />
-                                <div className="border-t border-[#E8E3EF] my-1" />
-                                {job.status !== 'Live' && <MenuBtn icon={PlayCircle} label="Publish Live" onClick={() => handleStatusChange(job._id, 'Live')} color="text-emerald-700" />}
-                                {job.status === 'Live' && <MenuBtn icon={PauseCircle} label="Pause/Hold" onClick={() => handleStatusChange(job._id, 'Paused')} color="text-amber-700" />}
-                                {job.status !== 'Draft' && <MenuBtn icon={Edit3} label="Move to Draft" onClick={() => handleStatusChange(job._id, 'Draft')} color="text-gray-700" />}
-                                {job.status !== 'Closed' && <MenuBtn icon={XCircle} label="Close Status" onClick={() => handleStatusChange(job._id, 'Closed')} color="text-rose-700" />}
-                                <div className="border-t border-[#E8E3EF] my-1" />
-                                <MenuBtn
-                                  icon={Trash2}
-                                  label="Delete Listing"
-                                  onClick={() => { setActiveMenuJobId(null); setConfirmDeleteId(job._id); }}
-                                  color="text-rose-700 font-bold"
-                                  hoverBg="hover:bg-rose-50"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {filteredJobs.length === 0 && jobs.length > 0 && (
-              <div className="p-12 text-center text-[#6F687A] space-y-2 border-t border-[#E8E3EF]">
-                <Search className="w-8 h-8 mx-auto text-[#98A2B3]" />
-                <p className="font-extrabold text-sm text-[#2C1B57]">No search results found</p>
-                <p className="text-xs text-[#98A2B3]">Try resetting filter tab settings or search query</p>
-                <button onClick={() => { setSearchQuery(''); setFilterStatus('all'); }} className="mt-3 px-4 py-2 border border-[#E8E3EF] hover:border-[#D7C8ED] text-xs font-bold text-[#42326E] rounded-xl hover:bg-[#F8F5FF] transition-all">Clear criteria</button>
-              </div>
-            )}
+      ) : (
+        <div className="bg-white rounded-xl border border-[#E8E3EF] shadow-xs overflow-hidden">
+          {/* List Header (Desktop) */}
+          <div className="hidden md:grid md:grid-cols-12 gap-3 px-4 py-3 bg-[#FAFAFA] border-b border-[#E8E3EF] text-[11px] font-bold text-[#6F687A] uppercase tracking-wide">
+            <div className="col-span-4">Job Details</div>
+            <div className="col-span-2">Location & Mode</div>
+            <div className="col-span-2">Salary</div>
+            <div className="col-span-1 text-center">Applicants</div>
+            <div className="col-span-1 text-center">Status</div>
+            <div className="col-span-2 text-right">Actions</div>
           </div>
 
-          {/* ═══ MOBILE CARDS VIEW ═══ */}
-          <div className="md:hidden space-y-4">
-            {filteredJobs.length === 0 && jobs.length > 0 && (
-              <div className="p-10 text-center text-[#6F687A] bg-white rounded-2xl border border-[#E8E3EF]">
-                <Search className="w-7 h-7 mx-auto text-[#98A2B3] mb-2" />
-                <p className="font-extrabold text-sm text-[#2C1B57]">No matches found</p>
-                <button onClick={() => { setSearchQuery(''); setFilterStatus('all'); }} className="mt-3 text-xs font-bold text-[#42326E] hover:underline">Reset search filters</button>
-              </div>
-            )}
-
+          {/* List Rows */}
+          <div className="divide-y divide-[#EFEAF6]">
             {filteredJobs.map(job => (
-              <div key={job._id} className="bg-white rounded-2xl border border-[#E8E3EF] shadow-xs overflow-hidden transition-transform duration-100">
-                {/* Header Information */}
-                <div className="p-4 pb-3">
-                  <div className="flex items-start gap-3">
+              <div
+                key={job._id}
+                className={`group grid grid-cols-1 md:grid-cols-12 gap-3 px-4 py-4 items-center hover:bg-[#F8F5FF]/40 transition-colors ${
+                  job.featured ? 'bg-amber-50/30' : ''
+                }`}
+              >
+                {/* Column 1: Job Details */}
+                <div className="col-span-4 flex items-start gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-lg bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-sm shadow-sm shrink-0 overflow-hidden">
                     {job.companyLogo?.url ? (
-                      <img src={job.companyLogo.url} alt="" className="w-11 h-11 rounded-xl object-cover border border-[#E8E3EF] shrink-0" />
+                      <img
+                        src={job.companyLogo.url}
+                        alt={job.companyName}
+                        className="w-full h-full object-cover"
+                        onError={e => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          const parent = (e.target as HTMLImageElement).parentElement;
+                          if (parent) parent.textContent = getInitials(job.companyName);
+                        }}
+                      />
                     ) : (
-                      <div className="w-11 h-11 rounded-xl bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-xs shrink-0">
-                        {job.companyName?.charAt(0) || 'C'}
-                      </div>
+                      getInitials(job.companyName)
                     )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        {getStatusBadge(job.status)}
-                        {job.featured && (
-                          <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md text-[9px] font-bold border border-amber-200 inline-flex items-center gap-0.5">
-                            <Star className="w-2.5 h-2.5 fill-amber-400" /> Featured
-                          </span>
-                        )}
-                      </div>
-                      <button onClick={() => handleView(job._id)} className="text-sm font-extrabold text-[#2C1B57] hover:text-[#42326E] text-left leading-tight">
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h3
+                        onClick={() => handleViewJob(job._id)}
+                        className="font-extrabold text-[#2C1B57] text-sm cursor-pointer hover:underline truncate"
+                        title={job.title}
+                      >
                         {job.title}
-                      </button>
-                      <p className="text-[10px] text-[#6F687A] mt-1 font-semibold truncate">
-                        {job.department || 'General'} • {job.role || 'N/A'}
-                      </p>
+                      </h3>
+                      {job.featured && (
+                        <span
+                          className="material-symbols-outlined text-[15px] text-amber-500 shrink-0"
+                          title="Featured"
+                        >
+                          star
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-xs text-[#6F687A] truncate font-medium">{job.companyName}</span>
+                      {job.isCompanyVerified && (
+                        <span className="material-symbols-outlined text-[12px] text-emerald-600">verified</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {job.isNew && (
+                        <span className="px-1.5 py-0.5 rounded bg-[#EDE6FA] text-[#42326E] font-bold text-[9px]">
+                          NEW
+                        </span>
+                      )}
+                      <span className="text-[10px] text-[#98A2B3] font-medium">{job.jobType || 'Full-Time'}</span>
+                      <span className="text-[10px] text-[#98A2B3]">•</span>
+                      <span className="font-mono text-[9px] text-[#98A2B3]">#{job._id.slice(-6)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span
+                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                          job.contactVisibility?.whatsapp
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-[#F8F5FF] text-[#98A2B3]'
+                        }`}
+                        title="WhatsApp Visibility"
+                      >
+                        <span className="material-symbols-outlined text-[10px]">chat</span>
+                        WA
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                          job.contactVisibility?.mobile
+                            ? 'bg-[#EDE6FA] text-[#42326E] border border-[#D7C8ED]'
+                            : 'bg-[#F8F5FF] text-[#98A2B3]'
+                        }`}
+                        title="Mobile Visibility"
+                      >
+                        <span className="material-symbols-outlined text-[10px]">phone</span>
+                        Mobile
+                      </span>
                     </div>
                   </div>
-
-                  {/* Highlight Chips */}
-                  <div className="grid grid-cols-2 gap-2 mt-4">
-                    <MobileInfoChip icon={MapPin} text={`${job.location?.city || 'N/A'} • ${job.workMode}`} />
-                    <MobileInfoChip icon={Briefcase} text={formatSalary(job.salary?.min, job.salary?.max, job.salary?.currency, job.salary?.period)} />
-                    <MobileInfoChip icon={Calendar} text={formatDate(job.postedAt || job.createdAt)} />
-                    <MobileInfoChip icon={Users} text={`${job.applicantsCount || 0} Applicants`} />
-                  </div>
-
-                  {/* Top Tags */}
-                  {job.skills && job.skills.length > 0 && (
-                    <div className="flex gap-1 mt-3 flex-wrap">
-                      {job.skills.slice(0, 3).map((s, i) => (
-                        <span key={i} className="px-2 py-0.5 bg-[#EDE6FA] rounded-md text-[9px] text-[#42326E] font-semibold border border-[#D7C8ED]">{s}</span>
-                      ))}
-                      {job.skills.length > 3 && <span className="text-[9px] text-[#98A2B3] self-center ml-0.5 font-bold">+{job.skills.length - 3} more</span>}
-                    </div>
-                  )}
                 </div>
 
-                {/* Mobile Button Actions */}
-                <div className="px-4 py-3 bg-[#FAFAFA] border-t border-[#E8E3EF] flex items-center gap-2">
-                  <button onClick={() => handleView(job._id)} className="flex-1 py-2 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-lg inline-flex items-center justify-center gap-1.5 hover:bg-blue-100 transition-colors">
-                    <Eye className="w-3.5 h-3.5" /> View
-                  </button>
-                  <button onClick={() => handleEdit(job._id)} className="flex-1 py-2 bg-[#EDE6FA] text-[#42326E] text-[11px] font-bold rounded-lg inline-flex items-center justify-center gap-1.5 hover:bg-[#D7C8ED] transition-colors">
-                    <Edit3 className="w-3.5 h-3.5" /> Edit
-                  </button>
-                  <div className="relative">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setActiveMenuJobId(activeMenuJobId === job._id ? null : job._id); }}
-                      disabled={actionLoading === job._id}
-                      className="p-2 text-[#6F687A] hover:text-[#2C1B57] hover:bg-white rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {actionLoading === job._id ? <Loader2 className="w-4 h-4 animate-spin text-[#42326E]" /> : <MoreVertical className="w-4 h-4" />}
-                    </button>
-
-                    {activeMenuJobId === job._id && (
-                      <div ref={menuRef} className="absolute right-0 bottom-10.5 z-40 w-48 bg-white border border-[#E8E3EF] rounded-xl shadow-xl py-1 text-xs font-semibold animate-in fade-in slide-in-from-bottom-2 duration-150">
-                        <MenuBtn icon={job.featured ? StarOff : Star} label={job.featured ? 'Unfeature' : 'Mark Featured'} onClick={() => handleToggleFeatured(job)} color="text-amber-700" />
-                        <div className="border-t border-[#E8E3EF] my-1" />
-                        {job.status !== 'Live' && <MenuBtn icon={PlayCircle} label="Publish Live" onClick={() => handleStatusChange(job._id, 'Live')} color="text-emerald-700" />}
-                        {job.status === 'Live' && <MenuBtn icon={PauseCircle} label="Pause Status" onClick={() => handleStatusChange(job._id, 'Paused')} color="text-amber-700" />}
-                        {job.status !== 'Closed' && <MenuBtn icon={XCircle} label="Close Posting" onClick={() => handleStatusChange(job._id, 'Closed')} color="text-rose-700" />}
-                        <div className="border-t border-[#E8E3EF] my-1" />
-                        <MenuBtn icon={Trash2} label="Delete Listing" onClick={() => { setActiveMenuJobId(null); setConfirmDeleteId(job._id); }} color="text-rose-700 font-bold" hoverBg="hover:bg-rose-50" />
-                      </div>
-                    )}
+                {/* Column 2: Location & Mode */}
+                <div className="col-span-2 text-xs text-[#49454F]">
+                  <div className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px] text-[#98A2B3]">location_on</span>
+                    <span className="truncate font-semibold">{job.location?.city || 'N/A'}</span>
                   </div>
+                  <div className="flex items-center gap-1 mt-1 text-[#98A2B3]">
+                    <span className="material-symbols-outlined text-[14px]">work</span>
+                    <span>{job.workMode || 'On-site'}</span>
+                  </div>
+                </div>
+
+                {/* Column 3: Salary */}
+                <div className="col-span-2">
+                  <div className="text-sm font-extrabold text-[#2C1B57] font-mono">
+                    {formatSalary(job.salary?.min, job.salary?.max, job.salary?.currency, job.salary?.period)}
+                  </div>
+                  <div className="text-[10px] text-[#98A2B3] mt-0.5">{formatDate(job.postedAt || job.createdAt)}</div>
+                </div>
+
+                {/* Column 4: Applicants */}
+                <div className="col-span-1 text-center">
+                  <button
+                    onClick={() => onViewApplicants?.(job._id, job.title)}
+                    className="text-sm font-extrabold text-[#2C1B57] hover:text-[#42326E] hover:underline"
+                  >
+                    {job.applicantsCount || 0}
+                    <span className="text-[#98A2B3] font-normal text-[10px]">/{job.applicantsCap || 100}</span>
+                  </button>
+                  <div className="w-full bg-[#F8F5FF] h-1 rounded-full overflow-hidden mt-1">
+                    <div
+                      className="bg-[#42326E] h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, Math.round(((job.applicantsCount || 0) / (job.applicantsCap || 100)) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Column 5: Status */}
+                <div className="col-span-1 text-center">
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap border ${
+                      job.status === 'Live'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : job.status === 'Draft'
+                        ? 'bg-slate-50 text-slate-700 border-slate-200'
+                        : job.status === 'Paused'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-rose-50 text-rose-800 border-rose-200'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        job.status === 'Live'
+                          ? 'bg-emerald-500 animate-pulse'
+                          : job.status === 'Draft'
+                          ? 'bg-slate-400'
+                          : job.status === 'Paused'
+                          ? 'bg-amber-500'
+                          : 'bg-rose-500'
+                      }`}
+                    />
+                    {job.status}
+                  </span>
+                </div>
+
+                {/* Column 6: Actions */}
+                <div className="col-span-2 flex items-center justify-end gap-1">
+                  <button
+                    onClick={() => handleViewJob(job._id)}
+                    className="p-1.5 rounded-lg text-[#6F687A] hover:text-[#42326E] hover:bg-[#F8F5FF] cursor-pointer transition-colors"
+                    title="View Details"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">visibility</span>
+                  </button>
+                  <button
+                    onClick={() => handleEditJob(job._id)}
+                    className="px-2 py-1.5 rounded-lg bg-[#42326E] text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-[#322554] transition-colors"
+                    title="Edit Job"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                    <span className="hidden lg:inline">Edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleToggleFeature(job)}
+                    disabled={actionLoading === job._id}
+                    className={`p-1.5 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors disabled:opacity-50 ${
+                      job.featured ? 'text-amber-500' : 'text-[#98A2B3] hover:text-amber-500'
+                    }`}
+                    title={job.featured ? 'Unfeature' : 'Feature Job'}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {job.featured ? 'star' : 'star_border'}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => handleToggleStatus(job)}
+                    disabled={actionLoading === job._id || job.status === 'Closed'}
+                    className="p-1.5 rounded-lg text-[#6F687A] hover:text-[#42326E] hover:bg-[#F8F5FF] cursor-pointer transition-colors disabled:opacity-30"
+                    title={job.status === 'Live' ? 'Pause' : 'Activate'}
+                  >
+                    {actionLoading === job._id ? (
+                      <span className="w-4 h-4 border-2 border-[#42326E]/30 border-t-[#42326E] rounded-full animate-spin inline-block" />
+                    ) : (
+                      <span className="material-symbols-outlined text-[16px]">
+                        {job.status === 'Live' ? 'pause_circle' : 'play_circle'}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteId(job._id)}
+                    className="p-1.5 rounded-lg text-[#98A2B3] hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                    title="Delete Job"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
                 </div>
               </div>
             ))}
           </div>
-        </>
+        </div>
       )}
 
-      {/* Delete Safeguard Confirmation Modal */}
-      {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-[#E8E3EF] animate-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5.5 h-5.5 text-rose-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-extrabold text-[#2C1B57]">Delete Job Listing?</h3>
-                <p className="text-xs text-[#6F687A]">This action is irreversible</p>
-              </div>
-            </div>
-            
-            <p className="text-sm text-[#49454F] leading-relaxed">
-              Are you sure you want to permanently remove this job listing? All associated applicant submissions will be wiped, but shared assets like logos will be <strong>securely preserved</strong>.
-            </p>
-
-            <div className="flex gap-2.5 pt-1.5">
-              <button
-                onClick={() => setConfirmDeleteId(null)}
-                className="flex-1 px-4 py-2.5 bg-white border border-[#E8E3EF] text-xs font-bold text-[#49454F] rounded-xl hover:bg-[#FAFAFA]"
-              >
-                Keep Listing
-              </button>
-              <button
-                onClick={() => handleDelete(confirmDeleteId)}
-                className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl inline-flex items-center justify-center gap-2 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" /> Yes, Delete
-              </button>
-            </div>
+      {/* ─── Footer Count ─── */}
+      {filteredJobs.length > 0 && (
+        <div className="bg-white p-4 rounded-xl border border-[#E8E3EF] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#6F687A]">
+          <div>
+            Showing <strong className="text-[#2C1B57]">{filteredJobs.length}</strong> of{' '}
+            <strong className="text-[#2C1B57]">{counts.total}</strong> jobs
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <strong className="text-[#2C1B57]">{counts.live}</strong> Live
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px] text-amber-500">star</span>
+              <strong className="text-[#2C1B57]">{counts.featured}</strong> Featured
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px] text-[#42326E]">group</span>
+              <strong className="text-[#2C1B57]">{counts.totalApplicants}</strong> Applicants
+            </span>
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════════════════════════════════
-   SUB COMPONENTS (STYLING WRAPPERS)
-   ═══════════════════════════════════════════════════════════════════════ */
-
-const MenuBtn: React.FC<{
-  icon: any; label: string; onClick: () => void; color: string; hoverBg?: string;
-}> = ({ icon: Icon, label, onClick, color, hoverBg = 'hover:bg-[#F7F4FA]' }) => (
-  <button onClick={onClick} className={`w-full text-left px-3 py-2.5 ${hoverBg} ${color} flex items-center gap-2.5 transition-colors`}>
-    <Icon className="w-4 h-4" /> {label}
-  </button>
-);
-
-const MobileInfoChip: React.FC<{ icon: any; text: string }> = ({ icon: Icon, text }) => (
-  <div className="flex items-center gap-1.5 text-[10px] text-[#6F687A] font-semibold bg-[#FAFAFA] px-2 py-2 rounded-xl border border-[#E8E3EF]">
-    <Icon className="w-3.5 h-3.5 text-[#98A2B3] shrink-0" />
-    <span className="truncate">{text}</span>
-  </div>
-);
-
-interface StatCardProps {
-  label: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-  color: 'purple' | 'emerald' | 'gray' | 'amber' | 'yellow' | 'blue';
-  onClick?: () => void;
-  active?: boolean;
-}
-
-const StatCard: React.FC<StatCardProps> = ({ label, value, icon: Icon, color, onClick, active }) => {
-  const colors = {
-    purple: { bg: 'bg-[#F8F5FF]', text: 'text-[#42326E]', border: 'border-[#E8E3EF]', activeBorder: 'border-[#42326E] ring-2 ring-[#42326E]/10' },
-    emerald: { bg: 'bg-emerald-50/50', text: 'text-emerald-700', border: 'border-emerald-100', activeBorder: 'border-emerald-500 ring-2 ring-emerald-500/10' },
-    gray: { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100', activeBorder: 'border-slate-400 ring-2 ring-slate-400/10' },
-    amber: { bg: 'bg-amber-50/50', text: 'text-amber-700', border: 'border-amber-100', activeBorder: 'border-amber-500 ring-2 ring-amber-500/10' },
-    yellow: { bg: 'bg-yellow-50/50', text: 'text-yellow-700', border: 'border-yellow-100', activeBorder: 'border-yellow-400 ring-2 ring-yellow-400/10' },
-    blue: { bg: 'bg-blue-50/50', text: 'text-blue-700', border: 'border-blue-100', activeBorder: 'border-blue-500 ring-2 ring-blue-500/10' },
-  }[color];
-
-  return (
-    <div
-      onClick={onClick}
-      className={`p-3.5 rounded-2xl border transition-all ${onClick ? 'cursor-pointer hover:shadow-xs' : ''} ${
-        active ? colors.activeBorder : `${colors.border} ${colors.bg}`
-      }`}
-    >
-      <div className="flex items-center justify-between mb-1.5">
-        <Icon className={`w-4 h-4 ${colors.text}`} />
-        <span className={`text-lg md:text-xl font-extrabold font-mono ${colors.text}`}>{value}</span>
-      </div>
-      <p className="text-[10px] font-bold text-[#6F687A] uppercase tracking-wider">{label}</p>
     </div>
   );
 };
