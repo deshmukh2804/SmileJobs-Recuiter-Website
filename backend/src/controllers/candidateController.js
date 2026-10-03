@@ -6,9 +6,25 @@ const quotaService = require("../services/subscription/quotaService");
 
 const AVATAR_COLORS = ["#42326E", "#6E5B9A", "#C58A3A", "#5A6E8F", "#8A6E4F", "#B29CFE", "#7B5FA0"];
 
+// ═══════════════════════════════════════════════════════════════
+// RESUME PROXY URL BUILDER
+// Transforms raw Cloudinary resume URLs into proper proxy URLs
+// that stream validated PDF buffers with correct headers.
+// ═══════════════════════════════════════════════════════════════
+const APPLICATION_SERVICE_BASE_URL =
+  process.env.APPLICATION_SERVICE_URL ||
+  process.env.APPLICATION_BACKEND_URL ||
+  "https://smilejobs-application-backend.onrender.com";
+
+const buildResumeProxyUrl = (userId) => {
+  if (!userId) return "";
+  const base = APPLICATION_SERVICE_BASE_URL.replace(/\/+$/, "");
+  return `${base}/api/profile/resume/view/${userId}`;
+};
+
 // ═══════════════════════════════════════════════════════
 // TRANSFORM APPLICATION TO CANDIDATE (LIST VIEW)
-// ✅ NOW INCLUDES resumeUrl, resumeFileName, avatarUrl
+// ✅ NOW INCLUDES resumeUrl, resumeFileName, avatarUrl (via proxy)
 // ═══════════════════════════════════════════════════════
 const transformApplicationToCandidate = (app) => {
   const name = app.candidateName || "Anonymous";
@@ -18,6 +34,10 @@ const transformApplicationToCandidate = (app) => {
     [app.candidateEducation?.degree, app.candidateEducation?.collegeName]
       .filter(Boolean)
       .join(", ") || "Not disclosed";
+
+  // ✅ Build proxy URL for resume (fixes corrupted/insecure Cloudinary URLs)
+  const userIdStr = app.userId ? String(app.userId) : "";
+  const proxyResumeUrl = userIdStr ? buildResumeProxyUrl(userIdStr) : "";
 
   return {
     id: String(app._id),
@@ -31,9 +51,10 @@ const transformApplicationToCandidate = (app) => {
     matchScore: app.matchPercentage || 0,
     salaryExpected: app.candidateCurrentSalary || app.jobSalary || "Not disclosed",
     avatarBg,
-    // ✅ CRITICAL FIX: Include avatar and resume URLs in list view
+    // ✅ CRITICAL FIX: Include avatar and PROXY resume URL in list view
     avatarUrl: app.candidateAvatarUrl || "",
-    resumeUrl: app.resumeUrl || "",
+    resumeUrl: proxyResumeUrl || app.resumeUrl || "",
+    resumeOriginalUrl: app.resumeUrl || "",
     resumeFileName: app.resumeFileName || "",
     bio:
       app.coverNote ||
@@ -63,10 +84,15 @@ const transformApplicationToCandidate = (app) => {
 
 // ═══════════════════════════════════════════════════════
 // TRANSFORM APPLICATION TO FULL DETAIL VIEW
+// ✅ Uses proxy URL for resume
 // ═══════════════════════════════════════════════════════
 const transformApplicationToFullDetail = (app) => {
   const name = app.candidateName || "Anonymous";
   const avatarBg = AVATAR_COLORS[Math.abs(name.charCodeAt(0)) % AVATAR_COLORS.length];
+
+  // ✅ Build proxy URL for resume (fixes corrupted/insecure Cloudinary URLs)
+  const userIdStr = app.userId ? String(app.userId) : "";
+  const proxyResumeUrl = userIdStr ? buildResumeProxyUrl(userIdStr) : "";
 
   return {
     _id: String(app._id),
@@ -83,8 +109,9 @@ const transformApplicationToFullDetail = (app) => {
     candidateAvatarUrl: app.candidateAvatarUrl || "",
     avatarBg,
 
-    // ✅ RESUME FIELDS
-    resumeUrl: app.resumeUrl || "",
+    // ✅ RESUME FIELDS — Now using proxy URL
+    resumeUrl: proxyResumeUrl || app.resumeUrl || "",
+    resumeOriginalUrl: app.resumeUrl || "",
     resumeFileName: app.resumeFileName || "",
 
     // Skills & Languages
@@ -211,7 +238,8 @@ class CandidateController {
       next(error);
     }
   }
-async getCandidateFullDetails(req, res, next) {
+
+  async getCandidateFullDetails(req, res, next) {
     try {
       const recruiterId = req.user._id;
       const { id } = req.params;
@@ -222,7 +250,7 @@ async getCandidateFullDetails(req, res, next) {
       const application = await Application.findById(id).lean();
       if (!application) throw new ApiError(404, "Application not found");
 
-      // ✅ DEBUG LOG - Add this
+      // ✅ DEBUG LOG
       console.log("═══════════════════════════════════════════════");
       console.log("📄 CANDIDATE DETAILS REQUEST");
       console.log("Application ID:", id);
@@ -230,6 +258,7 @@ async getCandidateFullDetails(req, res, next) {
       console.log("Resume URL from DB:", application.resumeUrl);
       console.log("Resume Filename:", application.resumeFileName);
       console.log("Avatar URL:", application.candidateAvatarUrl);
+      console.log("User ID (for proxy):", application.userId);
       console.log("═══════════════════════════════════════════════");
 
       const job = await Job.findById(application.jobId).lean();
@@ -249,9 +278,10 @@ async getCandidateFullDetails(req, res, next) {
 
       const fullDetails = transformApplicationToFullDetail(application);
 
-      // ✅ DEBUG LOG - Add this too
+      // ✅ DEBUG LOG
       console.log("📤 SENDING TO FRONTEND:");
-      console.log("resumeUrl:", fullDetails.resumeUrl);
+      console.log("resumeUrl (proxy):", fullDetails.resumeUrl);
+      console.log("resumeOriginalUrl:", fullDetails.resumeOriginalUrl);
       console.log("resumeFileName:", fullDetails.resumeFileName);
       console.log("═══════════════════════════════════════════════");
 
@@ -287,7 +317,7 @@ async getCandidateFullDetails(req, res, next) {
       next(error);
     }
   }
- 
+
   // ═══════════════════════════════════════════════════════
   // UPDATE STATUS (WORKFLOW STAGE)
   // ═══════════════════════════════════════════════════════
