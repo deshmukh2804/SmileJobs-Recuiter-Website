@@ -54,7 +54,7 @@ jobs:
     steps:
       - name: Configure SSH key
         env:
-          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_SSH_KEY_B64: ${{ secrets.DO_SSH_KEY_B64 }}
           DO_HOST: ${{ secrets.DO_HOST }}
         run: |
           set -e
@@ -62,15 +62,15 @@ jobs:
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          # Write key directly with preserved newlines
-          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/smilejobs_deploy_key
+          # Decode Base64 key cleanly
+          echo "$DO_SSH_KEY_B64" | tr -d '\r\n ' | base64 --decode > ~/.ssh/smilejobs_deploy_key
           chmod 600 ~/.ssh/smilejobs_deploy_key
 
-          # Add host to known_hosts
+          # Add Droplet to known hosts
           ssh-keyscan -H "$DO_HOST" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-          echo "SSH configuration verified successfully."
+          echo "SSH configured successfully."
 
       - name: Deploy Recruiter Backend
         env:
