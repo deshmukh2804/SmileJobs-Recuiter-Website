@@ -1,6 +1,5 @@
 // FILE: frontend/src/types.ts
 
-// ❌ Removed 'messages', 'notifications', 'analytics' from AppRoute
 export type AppRoute =
   | 'landing'
   | 'login'
@@ -167,14 +166,16 @@ export interface CompanyProfile {
   state?: string;
   country?: string;
 
-  // ✅ NEW: Company Type field (replaces CIN)
+  // ✅ Company Type field (replaces CIN)
   companyType?: string;
 
   registrationNumber?: string;
   gstNumber?: string;
+  // ✅ Combined PAN/TAN number
   panNumber?: string;
-  // ✅ NEW: TAN Number field
   tanNumber?: string;
+  // ✅ MSME / Shop Act Certificate Number
+  msmeNumber?: string;
 
   contactPerson?: { name: string; designation: string };
   contactEmail?: string;
@@ -186,12 +187,11 @@ export interface CompanyProfile {
   establishedYear?: number | string;
 }
 
-// ✅ UPDATED: Document types with new required documents
+// ✅ Document types — removed separate 'tan_card', 'pan_card' now accepts PAN or TAN
 export type DocumentType =
   | 'shop_act_msme'
   | 'gst_certificate'
   | 'pan_card'
-  | 'tan_card'
   | 'company_registration'
   | 'incorporation_certificate'
   | 'authorization_letter'

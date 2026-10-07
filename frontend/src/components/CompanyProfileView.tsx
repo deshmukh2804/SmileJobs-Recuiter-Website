@@ -9,48 +9,14 @@ import {
 import { companyService } from '../services/companyService';
 import { authService } from '../services/authService';
 import {
-  Save,
-  X,
-  FileText,
-  Upload,
-  ShieldCheck,
-  Clock,
-  AlertCircle,
-  Trash2,
-  Loader2,
-  Send,
-  Sparkles,
-  FileCheck2,
-  BadgeCheck,
-  XCircle,
-  ImagePlus,
-  Camera,
-  CheckCircle2,
-  Info,
-  Building2,
-  User,
-  Globe,
-  Phone,
-  Mail,
-  MapPin,
-  Calendar,
-  Hash,
-  Briefcase,
-  Heart,
-  ChevronDown,
-  Eye,
-  Shield,
-  Star,
-  Zap,
-  TrendingUp,
-  Award,
-  ArrowRight,
-  Search,
-  ChevronUp,
+  Save, X, FileText, Upload, Clock, AlertCircle, Trash2, Loader2, Send, Sparkles,
+  FileCheck2, BadgeCheck, XCircle, ImagePlus, Camera, CheckCircle2, Info, Building2,
+  User, Globe, Phone, Mail, MapPin, Calendar, Hash, Briefcase, Heart, ChevronDown,
+  Eye, Shield, Star, Zap, TrendingUp, Award, ArrowRight, ChevronUp,
 } from 'lucide-react';
 
 const MAX_GALLERY = 5;
-const REQUIRED_DOCS = 4;
+const REQUIRED_DOCS = 3; // ✅ Reduced to 3
 
 const LIMITS = {
   companyName: { min: 2, max: 100 },
@@ -72,8 +38,8 @@ const LIMITS = {
   whatsapp: { min: 10, max: 15 },
   linkedIn: { min: 0, max: 200 },
   gstNumber: { min: 15, max: 15 },
-  panNumber: { min: 10, max: 10 },
-  tanNumber: { min: 10, max: 10 },
+  panOrTan: { min: 10, max: 10 },
+  msmeNumber: { min: 5, max: 30 },
   establishedYear: { min: 4, max: 4 },
 } as const;
 
@@ -92,7 +58,7 @@ const INDIAN_STATES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-// INDUSTRY LIST
+// INDUSTRIES LIST
 // ═══════════════════════════════════════════════════════
 const INDUSTRIES = [
   'Information Technology (IT)', 'Software Development', 'IT Services & Consulting',
@@ -139,7 +105,7 @@ const COMPANY_TYPES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-// UPDATED DOCUMENT TYPES (4 required)
+// ✅ UPDATED DOCUMENT TYPES - 3 REQUIRED
 // ═══════════════════════════════════════════════════════
 const DOC_TYPES = [
   {
@@ -158,16 +124,9 @@ const DOC_TYPES = [
   },
   {
     value: 'pan_card',
-    label: 'PAN Card',
-    description: 'Permanent Account Number Card of the business',
+    label: 'PAN / TAN Card',
+    description: 'Company PAN Card or TAN Card (either one is acceptable)',
     icon: Shield,
-    required: true,
-  },
-  {
-    value: 'tan_card',
-    label: 'TAN Card',
-    description: 'Tax Deduction and Collection Account Number (TAN) document',
-    icon: FileText,
     required: true,
   },
 ];
@@ -192,13 +151,22 @@ const isValidGST = (gst: string) => {
   if (!gst) return true;
   return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gst.toUpperCase());
 };
-const isValidPAN = (pan: string) => {
-  if (!pan) return true;
-  return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase());
+const isValidPAN = (pan: string) => /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase());
+const isValidTAN = (tan: string) => /^[A-Z]{4}[0-9]{5}[A-Z]{1}$/.test(tan.toUpperCase());
+
+// ✅ Accepts either PAN or TAN format
+const isValidPanOrTan = (val: string) => {
+  if (!val) return true;
+  return isValidPAN(val) || isValidTAN(val);
 };
-const isValidTAN = (tan: string) => {
-  if (!tan) return true;
-  return /^[A-Z]{4}[0-9]{5}[A-Z]{1}$/.test(tan.toUpperCase());
+
+// Detect whether the entered value looks like PAN or TAN
+const detectPanOrTanType = (val: string): 'PAN' | 'TAN' | '' => {
+  if (!val) return '';
+  const upper = val.toUpperCase();
+  if (isValidPAN(upper)) return 'PAN';
+  if (isValidTAN(upper)) return 'TAN';
+  return '';
 };
 
 interface CompanyProfileViewProps {
@@ -210,18 +178,12 @@ interface CompanyProfileViewProps {
 }
 
 // ═══════════════════════════════════════════════════════
-// SEARCHABLE DROPDOWN COMPONENT
+// SEARCHABLE DROPDOWN
 // ═══════════════════════════════════════════════════════
 const SearchableDropdown: React.FC<{
-  label: string;
-  value: string;
-  onChange: (val: string) => void;
-  options: string[];
-  required?: boolean;
-  icon?: React.ReactNode;
-  placeholder?: string;
-  allowCustom?: boolean;
-  hint?: string;
+  label: string; value: string; onChange: (val: string) => void; options: string[];
+  required?: boolean; icon?: React.ReactNode; placeholder?: string;
+  allowCustom?: boolean; hint?: string;
 }> = ({ label, value, onChange, options, required, icon, placeholder, allowCustom = true, hint }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -251,72 +213,44 @@ const SearchableDropdown: React.FC<{
     <div ref={containerRef} className="relative">
       <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-1.5">
         {icon && <span className="text-[#6F687A]">{icon}</span>}
-        {label}
-        {required && <span className="text-rose-500">*</span>}
+        {label}{required && <span className="text-rose-500">*</span>}
       </label>
       <div className="relative">
         <input
-          ref={inputRef}
-          type="text"
-          value={isOpen ? search : value}
+          ref={inputRef} type="text" value={isOpen ? search : value}
           onChange={(e) => {
             setSearch(e.target.value);
             if (allowCustom) onChange(e.target.value);
             if (!isOpen) setIsOpen(true);
           }}
-          onFocus={() => {
-            setIsOpen(true);
-            setSearch(value);
-          }}
-          onBlur={() => setTouched(true)}
-          placeholder={placeholder}
+          onFocus={() => { setIsOpen(true); setSearch(value); }}
+          onBlur={() => setTouched(true)} placeholder={placeholder}
           className={`w-full text-xs py-2.5 px-3.5 pr-9 bg-[#FCFCF7] border rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
-            isEmpty
-              ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-200'
-              : value
-                ? 'border-emerald-300 focus:border-emerald-400 focus:ring-emerald-200'
-                : 'border-[#E8E3EF] focus:border-[#42326E] focus:ring-[#B29CFE]/30'
+            isEmpty ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-200'
+            : value ? 'border-emerald-300 focus:border-emerald-400 focus:ring-emerald-200'
+            : 'border-[#E8E3EF] focus:border-[#42326E] focus:ring-[#B29CFE]/30'
           }`}
         />
-        <button
-          type="button"
-          onClick={() => {
-            setIsOpen(!isOpen);
-            if (!isOpen) { setSearch(value); inputRef.current?.focus(); }
-          }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-lg transition-colors"
-        >
+        <button type="button" onClick={() => { setIsOpen(!isOpen); if (!isOpen) { setSearch(value); inputRef.current?.focus(); } }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-lg transition-colors">
           {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-[#6F687A]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#6F687A]" />}
         </button>
       </div>
-
       {isOpen && filtered.length > 0 && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-[#E8E3EF] rounded-xl shadow-xl max-h-48 overflow-y-auto scrollbar-thin">
           {filtered.map((option, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => {
-                onChange(option);
-                setSearch('');
-                setIsOpen(false);
-              }}
+            <button key={idx} type="button"
+              onClick={() => { onChange(option); setSearch(''); setIsOpen(false); }}
               className={`w-full text-left px-3.5 py-2.5 text-xs hover:bg-[#F7F4FA] transition-colors flex items-center gap-2 ${
                 value === option ? 'bg-[#EDE6FA] text-[#42326E] font-bold' : 'text-[#49454F]'
-              } ${idx === 0 ? 'rounded-t-xl' : ''} ${idx === filtered.length - 1 ? 'rounded-b-xl' : ''}`}
-            >
+              } ${idx === 0 ? 'rounded-t-xl' : ''} ${idx === filtered.length - 1 ? 'rounded-b-xl' : ''}`}>
               {value === option && <CheckCircle2 className="w-3.5 h-3.5 text-[#42326E] shrink-0" />}
               <span className="truncate">{option}</span>
             </button>
           ))}
         </div>
       )}
-
-      {isEmpty && (
-        <p className="text-[10px] text-rose-500 mt-1 flex items-center gap-1">
-          <AlertCircle className="w-3 h-3" /> This field is required
-        </p>
-      )}
+      {isEmpty && <p className="text-[10px] text-rose-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> This field is required</p>}
       {hint && !isEmpty && <p className="text-[10px] text-[#9C94A7] mt-1">{hint}</p>}
     </div>
   );
@@ -326,9 +260,7 @@ const SearchableDropdown: React.FC<{
 // COMPANY TYPE SELECTOR
 // ═══════════════════════════════════════════════════════
 const CompanyTypeSelector: React.FC<{
-  value: string;
-  onChange: (val: string) => void;
-  required?: boolean;
+  value: string; onChange: (val: string) => void; required?: boolean;
 }> = ({ value, onChange, required }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [touched, setTouched] = useState(false);
@@ -351,43 +283,30 @@ const CompanyTypeSelector: React.FC<{
     <div ref={containerRef} className="relative">
       <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-1.5">
         <Building2 className="w-3.5 h-3.5 text-[#6F687A]" />
-        Company Type
-        {required && <span className="text-rose-500">*</span>}
+        Company Type{required && <span className="text-rose-500">*</span>}
       </label>
-      <button
-        type="button"
-        onClick={() => { setIsOpen(!isOpen); setTouched(true); }}
+      <button type="button" onClick={() => { setIsOpen(!isOpen); setTouched(true); }}
         className={`w-full text-left text-xs py-2.5 px-3.5 bg-[#FCFCF7] border rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 flex items-center justify-between gap-2 ${
-          isEmpty
-            ? 'border-rose-300 focus:ring-rose-200'
-            : value
-              ? 'border-emerald-300 focus:ring-emerald-200'
-              : 'border-[#E8E3EF] focus:ring-[#B29CFE]/30'
-        }`}
-      >
+          isEmpty ? 'border-rose-300 focus:ring-rose-200'
+          : value ? 'border-emerald-300 focus:ring-emerald-200'
+          : 'border-[#E8E3EF] focus:ring-[#B29CFE]/30'
+        }`}>
         <span className={value ? 'text-[#2C1B57] font-semibold' : 'text-[#9C94A7]'}>
           {selectedType ? selectedType.label : 'Select your company type...'}
         </span>
         {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-[#6F687A]" /> : <ChevronDown className="w-3.5 h-3.5 text-[#6F687A]" />}
       </button>
-
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-[#E8E3EF] rounded-2xl shadow-xl max-h-64 overflow-y-auto scrollbar-thin">
           {COMPANY_TYPES.map((type, idx) => (
-            <button
-              key={type.value}
-              type="button"
-              onClick={() => { onChange(type.value); setIsOpen(false); }}
+            <button key={type.value} type="button" onClick={() => { onChange(type.value); setIsOpen(false); }}
               className={`w-full text-left px-4 py-3 hover:bg-[#F7F4FA] transition-colors border-b border-[#F3EFF8] last:border-0 ${
                 value === type.value ? 'bg-[#EDE6FA]' : ''
-              } ${idx === 0 ? 'rounded-t-2xl' : ''} ${idx === COMPANY_TYPES.length - 1 ? 'rounded-b-2xl' : ''}`}
-            >
+              } ${idx === 0 ? 'rounded-t-2xl' : ''} ${idx === COMPANY_TYPES.length - 1 ? 'rounded-b-2xl' : ''}`}>
               <div className="flex items-center gap-2">
                 {value === type.value && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
                 <div>
-                  <div className={`text-xs font-bold ${value === type.value ? 'text-[#42326E]' : 'text-[#2C1B57]'}`}>
-                    {type.label}
-                  </div>
+                  <div className={`text-xs font-bold ${value === type.value ? 'text-[#42326E]' : 'text-[#2C1B57]'}`}>{type.label}</div>
                   <div className="text-[10px] text-[#9C94A7] mt-0.5">{type.desc}</div>
                 </div>
               </div>
@@ -395,12 +314,7 @@ const CompanyTypeSelector: React.FC<{
           ))}
         </div>
       )}
-
-      {isEmpty && (
-        <p className="text-[10px] text-rose-500 mt-1 flex items-center gap-1">
-          <AlertCircle className="w-3 h-3" /> Please select your company type
-        </p>
-      )}
+      {isEmpty && <p className="text-[10px] text-rose-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Please select your company type</p>}
       {!isEmpty && <p className="text-[10px] text-[#9C94A7] mt-1">Select the legal entity type of your organization</p>}
     </div>
   );
@@ -413,16 +327,10 @@ const CharCounter: React.FC<{ current: number; max: number; min?: number; label?
   const isOver = current > max;
   const isUnder = min ? current < min && current > 0 : false;
   const percentage = Math.min((current / max) * 100, 100);
-
   return (
     <div className="flex items-center gap-2 mt-1">
       <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-300 ${
-            isOver ? 'bg-rose-500' : isUnder ? 'bg-amber-400' : percentage > 80 ? 'bg-amber-400' : 'bg-emerald-400'
-          }`}
-          style={{ width: `${percentage}%` }}
-        />
+        <div className={`h-full rounded-full transition-all duration-300 ${isOver ? 'bg-rose-500' : isUnder ? 'bg-amber-400' : percentage > 80 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${percentage}%` }} />
       </div>
       <span className={`text-[10px] font-mono font-semibold tabular-nums ${isOver ? 'text-rose-600' : isUnder ? 'text-amber-600' : 'text-gray-400'}`}>
         {current}/{max}{label && ` ${label}`}
@@ -435,13 +343,12 @@ const CharCounter: React.FC<{ current: number; max: number; min?: number; label?
 // VALIDATED INPUT
 // ═══════════════════════════════════════════════════════
 const ValidatedInput: React.FC<{
-  label: string; value: string; onChange: (val: string) => void; maxLength: number;
+  label: string | React.ReactNode; value: string; onChange: (val: string) => void; maxLength: number;
   minLength?: number; required?: boolean; type?: string; placeholder?: string;
   icon?: React.ReactNode; validator?: (val: string) => boolean; validationMsg?: string;
-  hint?: string; disabled?: boolean; transform?: 'uppercase' | 'none';
+  hint?: string | React.ReactNode; disabled?: boolean; transform?: 'uppercase' | 'none';
 }> = ({ label, value, onChange, maxLength, minLength, required, type = 'text', placeholder, icon, validator, validationMsg, hint, disabled, transform }) => {
   const [touched, setTouched] = useState(false);
-
   const isOverLimit = value.length > maxLength;
   const isUnderMin = touched && required && minLength ? value.length > 0 && value.length < minLength : false;
   const isEmpty = touched && required && value.length === 0;
@@ -459,25 +366,18 @@ const ValidatedInput: React.FC<{
     <div>
       <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-1.5">
         {icon && <span className="text-[#6F687A]">{icon}</span>}
-        {label}
-        {required && <span className="text-rose-500">*</span>}
+        {label}{required && <span className="text-rose-500">*</span>}
       </label>
       <div className="relative">
-        <input
-          type={type} value={value} onChange={handleChange}
-          onBlur={() => setTouched(true)} placeholder={placeholder} disabled={disabled}
+        <input type={type} value={value} onChange={handleChange} onBlur={() => setTouched(true)} placeholder={placeholder} disabled={disabled}
           className={`w-full text-xs py-2.5 px-3.5 bg-[#FCFCF7] border rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
             hasError ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-200'
             : isValid ? 'border-emerald-300 focus:border-emerald-400 focus:ring-emerald-200'
             : 'border-[#E8E3EF] focus:border-[#42326E] focus:ring-[#B29CFE]/30'
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
-        {isValid && (
-          <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
-        )}
-        {hasError && touched && (
-          <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-500" />
-        )}
+        {isValid && <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />}
+        {hasError && touched && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-500" />}
       </div>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
@@ -494,16 +394,14 @@ const ValidatedInput: React.FC<{
 };
 
 // ═══════════════════════════════════════════════════════
-// SECTION COMPONENT
+// SECTION
 // ═══════════════════════════════════════════════════════
 const Section: React.FC<{
   title: string; subtitle: string; icon: React.ReactNode; badge?: React.ReactNode;
   children: React.ReactNode; defaultOpen?: boolean;
-  completionCount?: { done: number; total: number }; id?: string;
-  hasErrors?: boolean;
+  completionCount?: { done: number; total: number }; id?: string; hasErrors?: boolean;
 }> = ({ title, subtitle, icon, badge, children, defaultOpen = true, completionCount, id, hasErrors }) => {
   const [open, setOpen] = useState(defaultOpen);
-
   return (
     <div id={id} className={`bg-white rounded-3xl border-2 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md ${
       hasErrors ? 'border-rose-200 shadow-rose-100/50' : completionCount?.done === completionCount?.total ? 'border-emerald-200' : 'border-[#E8E3EF]'
@@ -541,7 +439,7 @@ const Section: React.FC<{
 };
 
 // ═══════════════════════════════════════════════════════
-// VERIFICATION STEPPER
+// STEPPER
 // ═══════════════════════════════════════════════════════
 const VerificationStepper: React.FC<{ steps: { label: string; done: boolean; active: boolean }[] }> = ({ steps }) => (
   <div className="flex items-center gap-1 w-full">
@@ -592,6 +490,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [showRequirementsChecklist, setShowRequirementsChecklist] = useState(false);
 
+  // ✅ UNIFIED PAN/TAN input state (bound to whichever field has data)
+  const [panTanInput, setPanTanInput] = useState<string>(
+    (company.panNumber || company.tanNumber || '').toUpperCase()
+  );
+
   const docFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const logoFileRef = useRef<HTMLInputElement>(null);
   const galleryFileRef = useRef<HTMLInputElement>(null);
@@ -604,6 +507,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         gallery: company.gallery || [],
         perks: company.perks || [],
       });
+      setPanTanInput((company.panNumber || company.tanNumber || '').toUpperCase());
     }
   }, [company]);
 
@@ -628,6 +532,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           };
           setProfile(merged);
           onUpdateCompany(merged);
+          setPanTanInput((merged.panNumber || merged.tanNumber || '').toUpperCase());
         }
         if (data?.verificationDocuments) setDocuments(data.verificationDocuments);
         if (data?.verificationStatus) setVerificationStatus(data.verificationStatus);
@@ -651,6 +556,30 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       ...prev,
       contactPerson: { name: prev.contactPerson?.name || '', designation: prev.contactPerson?.designation || '', [key]: value },
     }));
+  }, []);
+
+  // ✅ Handle unified PAN/TAN input — auto-route to correct field
+  const handlePanTanChange = useCallback((val: string) => {
+    const upper = val.toUpperCase().slice(0, 10);
+    setPanTanInput(upper);
+
+    // Auto-detect type and route to correct field
+    const detectedType = detectPanOrTanType(upper);
+    setProfile((prev) => {
+      const next = { ...prev };
+      if (detectedType === 'PAN') {
+        next.panNumber = upper;
+        next.tanNumber = '';
+      } else if (detectedType === 'TAN') {
+        next.tanNumber = upper;
+        next.panNumber = '';
+      } else {
+        // Still typing — store in panNumber temporarily until valid
+        next.panNumber = upper;
+        next.tanNumber = '';
+      }
+      return next;
+    });
   }, []);
 
   const isAboutValid = useCallback((text: string | null | undefined): boolean => {
@@ -684,14 +613,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     return { done, total };
   }, [profile.contactPerson, profile.contactEmail, profile.contactPhone]);
 
+  // ✅ UPDATED legal completion: GST + (PAN or TAN) + MSME Number
   const legalCompletion = useMemo(() => {
     let done = 0;
     const total = 3;
     if (profile.gstNumber && isValidGST(profile.gstNumber)) done++;
-    if (profile.panNumber && isValidPAN(profile.panNumber)) done++;
-    if (profile.tanNumber && isValidTAN(profile.tanNumber)) done++;
+    if (panTanInput && isValidPanOrTan(panTanInput)) done++;
+    if (profile.msmeNumber && profile.msmeNumber.length >= LIMITS.msmeNumber.min) done++;
     return { done, total };
-  }, [profile.gstNumber, profile.panNumber, profile.tanNumber]);
+  }, [profile.gstNumber, panTanInput, profile.msmeNumber]);
 
   const docCompletion = useMemo(() => {
     const uploadedTypes = new Set(documents.map((d) => d.docType));
@@ -730,10 +660,10 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
     if (!profile.gstNumber || !isValidGST(profile.gstNumber))
       missing.push({ section: 'Legal', field: 'GST Number', helpText: 'Enter valid 15-digit GSTIN', sectionId: 'section-legal' });
-    if (!profile.panNumber || !isValidPAN(profile.panNumber))
-      missing.push({ section: 'Legal', field: 'PAN Number', helpText: 'Enter valid 10-digit PAN', sectionId: 'section-legal' });
-    if (!profile.tanNumber || !isValidTAN(profile.tanNumber))
-      missing.push({ section: 'Legal', field: 'TAN Number', helpText: 'Enter valid 10-digit TAN', sectionId: 'section-legal' });
+    if (!panTanInput || !isValidPanOrTan(panTanInput))
+      missing.push({ section: 'Legal', field: 'PAN / TAN Number', helpText: 'Enter valid PAN (ABCDE1234F) or TAN (ABCD12345E)', sectionId: 'section-legal' });
+    if (!profile.msmeNumber || profile.msmeNumber.length < LIMITS.msmeNumber.min)
+      missing.push({ section: 'Legal', field: 'Shop Act / MSME Number', helpText: `Enter registration number (min ${LIMITS.msmeNumber.min} chars)`, sectionId: 'section-legal' });
 
     const uploadedTypes = new Set(documents.map((d) => d.docType));
     DOC_TYPES.forEach((dt) => {
@@ -742,7 +672,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     });
 
     return missing;
-  }, [profile, documents, isAboutValid]);
+  }, [profile, panTanInput, documents, isAboutValid]);
 
   const overallReadiness = useMemo(() => {
     const allDone = missingRequirements.length === 0;
@@ -768,7 +698,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     try {
       await companyService.updateProfile(profile);
       setSaveSuccess(true);
-      onShowToast('✓ Company profile details saved successfully!');
+      onShowToast('✓ Company profile saved successfully!');
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
       onShowToast(err.response?.data?.message || 'Saved locally');
@@ -930,7 +860,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   };
 
   const statusConfig = {
-    not_submitted: { bg: 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200', iconBg: 'bg-amber-100', icon: <AlertCircle className="w-5 h-5 text-amber-600" />, title: 'Verification Required', desc: 'Complete your profile and upload 4 required documents to get verified.', textColor: 'text-amber-900', descColor: 'text-amber-700' },
+    not_submitted: { bg: 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200', iconBg: 'bg-amber-100', icon: <AlertCircle className="w-5 h-5 text-amber-600" />, title: 'Verification Required', desc: 'Complete your profile and upload 3 required documents to get verified.', textColor: 'text-amber-900', descColor: 'text-amber-700' },
     pending: { bg: 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200', iconBg: 'bg-blue-100', icon: <Clock className="w-5 h-5 text-blue-600 animate-pulse" />, title: 'Verification Under Review', desc: 'Our team is reviewing your documents. Usually takes 24-48 business hours.', textColor: 'text-blue-900', descColor: 'text-blue-700' },
     approved: { bg: 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200', iconBg: 'bg-emerald-100', icon: <BadgeCheck className="w-5 h-5 text-emerald-600" />, title: 'Verified Trusted Company', desc: 'Your brand is verified. Job postings display the verified trust badge.', textColor: 'text-emerald-900', descColor: 'text-emerald-700' },
     rejected: { bg: 'bg-gradient-to-r from-rose-50 to-pink-50 border-rose-200', iconBg: 'bg-rose-100', icon: <XCircle className="w-5 h-5 text-rose-600" />, title: 'Verification Rejected', desc: rejectionReason || 'Documents were not clear. Please review, update, and resubmit.', textColor: 'text-rose-900', descColor: 'text-rose-700' },
@@ -939,6 +869,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const galleryCount = profile.gallery?.length || 0;
   const aboutWordCount = countWords(profile.about);
   const aboutCharCount = (profile.about || '').trim().length;
+  const detectedPanTanType = detectPanOrTanType(panTanInput);
 
   if (isLoading) {
     return (
@@ -976,7 +907,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         </div>
       )}
 
-      {/* REQUIREMENTS CHECKLIST WITH NAVIGATION */}
+      {/* REQUIREMENTS CHECKLIST */}
       {showRequirementsChecklist && missingRequirements.length > 0 && verificationStatus !== 'approved' && (
         <div className="bg-gradient-to-r from-rose-50 to-orange-50 border-2 border-rose-200 rounded-3xl p-6 shadow-md animate-in slide-in-from-top duration-300">
           <div className="flex items-start justify-between gap-4 mb-4">
@@ -1020,11 +951,10 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       </div>
 
       <form onSubmit={handleSave} className="space-y-4">
-        {/* ═══ SECTION: COMPANY INFO ═══ */}
+        {/* ═══ COMPANY INFO ═══ */}
         <Section id="section-company" title="Company Information" subtitle="Branding, type & core details" icon={<Building2 className="w-5 h-5 text-[#42326E]" />} completionCount={basicCompletion} defaultOpen={true}
           hasErrors={missingRequirements.some((m) => m.sectionId === 'section-company')}>
 
-          {/* Logo */}
           <div className="flex items-center gap-5 pb-5 border-b border-[#F3EFF8]">
             <div className="relative group">
               {profile.logo?.url ? (
@@ -1057,7 +987,6 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <SearchableDropdown label="Industry" value={profile.industry || ''} onChange={(v) => updateField('industry', v)} options={INDUSTRIES} required icon={<Briefcase className="w-3.5 h-3.5" />} placeholder="Search or type your industry..." allowCustom={true} hint="Select from list or type your own" />
           </div>
 
-          {/* Company Type Selector */}
           <CompanyTypeSelector value={profile.companyType || ''} onChange={(v) => updateField('companyType', v)} required />
 
           <ValidatedInput label="Tagline / Short description" value={profile.tagline || ''} onChange={(v) => updateField('tagline', v)} maxLength={LIMITS.tagline.max} icon={<Star className="w-3.5 h-3.5" />} placeholder="AI-powered hiring infrastructure solutions" hint="Displayed with job listings" />
@@ -1075,7 +1004,6 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <ValidatedInput label="Country" value={profile.country || 'India'} onChange={(v) => updateField('country', v)} maxLength={LIMITS.country.max} minLength={LIMITS.country.min} placeholder="India" />
           </div>
 
-          {/* About */}
           <div>
             <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-1.5">
               <FileText className="w-3.5 h-3.5 text-[#6F687A]" /> About the Organization <span className="text-rose-500">*</span>
@@ -1097,7 +1025,6 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             </div>
           </div>
 
-          {/* Perks */}
           <div>
             <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-2">
               <Heart className="w-3.5 h-3.5 text-[#6F687A]" /> Cultural Perks & Benefits
@@ -1126,7 +1053,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           </div>
         </Section>
 
-        {/* ═══ SECTION: GALLERY ═══ */}
+        {/* ═══ GALLERY ═══ */}
         <Section title="Company Photos & Workspace" subtitle={`Upload workspace photos (${galleryCount}/${MAX_GALLERY})`} icon={<ImagePlus className="w-5 h-5 text-[#42326E]" />} defaultOpen={true}>
           <div className="p-6 bg-gradient-to-br from-[#FCFCF7] to-[#F7F4FA] border-2 border-dashed border-[#E8E3EF] hover:border-[#B29CFE] rounded-2xl transition-all flex flex-col items-center justify-center text-center gap-2 mb-4">
             <ImagePlus className="w-8 h-8 text-[#42326E] opacity-60" />
@@ -1157,7 +1084,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           )}
         </Section>
 
-        {/* ═══ SECTION: CONTACT ═══ */}
+        {/* ═══ CONTACT ═══ */}
         <Section id="section-contact" title="Contact & Recruiter Details" subtitle="Identity displayed to job applicants" icon={<User className="w-5 h-5 text-[#42326E]" />} completionCount={contactCompletion} defaultOpen={true}
           hasErrors={missingRequirements.some((m) => m.sectionId === 'section-contact')}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1170,19 +1097,106 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           </div>
         </Section>
 
-        {/* ═══ SECTION: LEGAL ═══ */}
-        <Section id="section-legal" title="Legal & Tax Details" subtitle="Required tax identifiers for verification" icon={<Shield className="w-5 h-5 text-[#42326E]" />} completionCount={legalCompletion} defaultOpen={true}
+        {/* ═══ LEGAL (UPDATED) ═══ */}
+        <Section id="section-legal" title="Legal & Tax Details" subtitle="Required business identifiers for verification" icon={<Shield className="w-5 h-5 text-[#42326E]" />} completionCount={legalCompletion} defaultOpen={true}
           hasErrors={missingRequirements.some((m) => m.sectionId === 'section-legal')}>
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4">
             <p className="text-[11px] text-amber-800 font-semibold flex items-center gap-1.5">
-              <Info className="w-3.5 h-3.5 shrink-0" /> All 3 tax identifiers (GST, PAN, TAN) are mandatory for verification
+              <Info className="w-3.5 h-3.5 shrink-0" /> GST Number, PAN/TAN Number, and Shop Act/MSME Number are all required
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <ValidatedInput label="GST Number (GSTIN)" value={profile.gstNumber || ''} onChange={(v) => updateField('gstNumber', v)} maxLength={LIMITS.gstNumber.max} required icon={<FileCheck2 className="w-3.5 h-3.5" />} placeholder="27ABCDE1234F1Z5" transform="uppercase" validator={isValidGST} validationMsg="Enter valid 15-digit GSTIN" hint="e.g. 27ABCDE1234F1Z5" />
-            <ValidatedInput label="Company PAN Number" value={profile.panNumber || ''} onChange={(v) => updateField('panNumber', v)} maxLength={LIMITS.panNumber.max} required icon={<Shield className="w-3.5 h-3.5" />} placeholder="ABCDE1234F" transform="uppercase" validator={isValidPAN} validationMsg="Enter valid 10-digit PAN" hint="e.g. ABCDE1234F" />
-            <ValidatedInput label="TAN Number" value={profile.tanNumber || ''} onChange={(v) => updateField('tanNumber', v)} maxLength={LIMITS.tanNumber.max} required icon={<Hash className="w-3.5 h-3.5" />} placeholder="DELA12345F" transform="uppercase" validator={isValidTAN} validationMsg="Enter valid 10-digit TAN (4 letters + 5 digits + 1 letter)" hint="e.g. DELA12345F — Tax Deduction Account Number" />
-            <ValidatedInput label="Established Year" value={String(profile.establishedYear || profile.foundedYear || '')} onChange={(v) => { const clean = v.replace(/\D/g, '').slice(0, 4); updateField('establishedYear', clean); updateField('foundedYear', clean); }} maxLength={LIMITS.establishedYear.max} icon={<Calendar className="w-3.5 h-3.5" />} placeholder="2018" validator={(v) => { if (!v) return true; const yr = parseInt(v); return v.length === 4 && yr >= 1800 && yr <= new Date().getFullYear(); }} validationMsg={`Valid year (1800-${new Date().getFullYear()})`} hint="Optional" />
+            {/* GST Number */}
+            <ValidatedInput
+              label="GST Number (GSTIN)"
+              value={profile.gstNumber || ''}
+              onChange={(v) => updateField('gstNumber', v)}
+              maxLength={LIMITS.gstNumber.max}
+              required
+              icon={<FileCheck2 className="w-3.5 h-3.5" />}
+              placeholder="27ABCDE1234F1Z5"
+              transform="uppercase"
+              validator={isValidGST}
+              validationMsg="Enter valid 15-digit GSTIN"
+              hint="e.g. 27ABCDE1234F1Z5"
+            />
+
+            {/* ✅ UNIFIED PAN/TAN Number with auto-detection */}
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-1.5">
+                <Shield className="w-3.5 h-3.5 text-[#6F687A]" />
+                PAN / TAN Number
+                <span className="text-rose-500">*</span>
+                {detectedPanTanType && (
+                  <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold tracking-wider ${
+                    detectedPanTanType === 'PAN' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {detectedPanTanType} DETECTED
+                  </span>
+                )}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={panTanInput}
+                  onChange={(e) => handlePanTanChange(e.target.value)}
+                  placeholder="PAN: ABCDE1234F  or  TAN: ABCD12345E"
+                  className={`w-full text-xs py-2.5 px-3.5 bg-[#FCFCF7] border rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                    panTanInput && !isValidPanOrTan(panTanInput)
+                      ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-200'
+                      : panTanInput && isValidPanOrTan(panTanInput)
+                      ? 'border-emerald-300 focus:border-emerald-400 focus:ring-emerald-200'
+                      : 'border-[#E8E3EF] focus:border-[#42326E] focus:ring-[#B29CFE]/30'
+                  }`}
+                />
+                {panTanInput && isValidPanOrTan(panTanInput) && (
+                  <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+                )}
+                {panTanInput && !isValidPanOrTan(panTanInput) && (
+                  <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-500" />
+                )}
+              </div>
+              {panTanInput && !isValidPanOrTan(panTanInput) && (
+                <p className="text-[10px] text-rose-500 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Invalid format. PAN: 5 letters + 4 digits + 1 letter | TAN: 4 letters + 5 digits + 1 letter
+                </p>
+              )}
+              {!panTanInput && (
+                <p className="text-[10px] text-[#9C94A7] mt-1">Enter either PAN (ABCDE1234F) or TAN (ABCD12345E) — one is sufficient</p>
+              )}
+              {panTanInput && isValidPanOrTan(panTanInput) && (
+                <p className="text-[10px] text-emerald-600 mt-1 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Valid {detectedPanTanType} number
+                </p>
+              )}
+            </div>
+
+            {/* ✅ Shop Act / MSME Number */}
+            <ValidatedInput
+              label="Shop Act / MSME Number"
+              value={profile.msmeNumber || ''}
+              onChange={(v) => updateField('msmeNumber', v)}
+              maxLength={LIMITS.msmeNumber.max}
+              minLength={LIMITS.msmeNumber.min}
+              required
+              icon={<Hash className="w-3.5 h-3.5" />}
+              placeholder="e.g. UDYAM-MH-01-0012345"
+              transform="uppercase"
+              hint="Shop & Establishment License Number or MSME/Udyam Registration Number"
+            />
+
+            {/* Established Year */}
+            <ValidatedInput
+              label="Established Year"
+              value={String(profile.establishedYear || profile.foundedYear || '')}
+              onChange={(v) => { const clean = v.replace(/\D/g, '').slice(0, 4); updateField('establishedYear', clean); updateField('foundedYear', clean); }}
+              maxLength={LIMITS.establishedYear.max}
+              icon={<Calendar className="w-3.5 h-3.5" />}
+              placeholder="2018"
+              validator={(v) => { if (!v) return true; const yr = parseInt(v); return v.length === 4 && yr >= 1800 && yr <= new Date().getFullYear(); }}
+              validationMsg={`Valid year (1800-${new Date().getFullYear()})`}
+              hint="Optional"
+            />
           </div>
         </Section>
 
@@ -1198,7 +1212,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         </div>
       </form>
 
-      {/* ═══ SECTION: DOCUMENTS ═══ */}
+      {/* ═══ DOCUMENTS (3 ONLY) ═══ */}
       <Section id="section-docs" title="Verification Documents" subtitle={`Upload all ${REQUIRED_DOCS} required documents`} icon={<FileCheck2 className="w-5 h-5 text-[#42326E]" />}
         badge={docCompletion.done === docCompletion.total ? <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-extrabold">COMPLETE</span> : <span className="px-2.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[9px] font-extrabold">INCOMPLETE</span>}
         completionCount={docCompletion} defaultOpen={true} hasErrors={missingRequirements.some((m) => m.sectionId === 'section-docs')}>
@@ -1258,7 +1272,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Accepted: PDF, JPEG, PNG</li>
             <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Max 5MB per file</li>
             <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Must be clear and readable</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> All 4 documents are mandatory</li>
+            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> All 3 documents are mandatory</li>
           </ul>
         </div>
       </Section>

@@ -14,7 +14,6 @@ const documentSchema = new mongoose.Schema(
         "shop_act_msme",
         "gst_certificate",
         "pan_card",
-        "tan_card",
         "company_registration",
         "incorporation_certificate",
         "authorization_letter",
@@ -49,7 +48,6 @@ const recruiterSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, default: "" },
 
-    // ✅ SPARSE UNIQUE: allows multiple docs with NO email (phone-only users)
     email: {
       type: String,
       lowercase: true,
@@ -58,7 +56,6 @@ const recruiterSchema = new mongoose.Schema(
       sparse: true,
     },
 
-    // ✅ SPARSE UNIQUE: allows multiple docs with NO phone (email-only users)
     phone: {
       type: String,
       trim: true,
@@ -74,7 +71,6 @@ const recruiterSchema = new mongoose.Schema(
     companyName: { type: String, default: "" },
     designation: { type: String, default: "" },
 
-    // ✅ SPARSE UNIQUE: allows multiple docs with NO googleId
     googleId: {
       type: String,
       unique: true,
@@ -115,14 +111,16 @@ const recruiterSchema = new mongoose.Schema(
       establishedYear: { type: Number, default: null },
       perks: [{ type: String }],
 
-      // ✅ NEW: Company Type field (replaces CIN/LLCIN)
+      // ✅ Company Type field
       companyType: { type: String, default: "" },
 
       registrationNumber: { type: String, default: "" },
       gstNumber: { type: String, default: "" },
+      // ✅ PAN or TAN (either accepted)
       panNumber: { type: String, default: "" },
-      // ✅ NEW: TAN Number field
       tanNumber: { type: String, default: "" },
+      // ✅ MSME / Shop Act Certificate Number
+      msmeNumber: { type: String, default: "" },
 
       contactPerson: {
         name: { type: String, default: "" },
@@ -154,7 +152,7 @@ const recruiterSchema = new mongoose.Schema(
 );
 
 // ═══════════════════════════════════════════════════════
-// PRE-VALIDATE: Ensure at least one identifier exists
+// PRE-VALIDATE
 // ═══════════════════════════════════════════════════════
 recruiterSchema.pre("validate", function (next) {
   if (!this.phone && !this.email && !this.googleId) {
@@ -164,7 +162,7 @@ recruiterSchema.pre("validate", function (next) {
 });
 
 // ═══════════════════════════════════════════════════════
-// PRE-SAVE: Strip empty/null identifiers to work with sparse indexes
+// PRE-SAVE
 // ═══════════════════════════════════════════════════════
 recruiterSchema.pre("save", function (next) {
   const fieldsToStrip = ["email", "phone", "googleId"];
@@ -186,7 +184,7 @@ recruiterSchema.pre("save", function (next) {
 });
 
 // ═══════════════════════════════════════════════════════
-// POST-SAVE: Raw $unset to guarantee no null values in DB
+// POST-SAVE
 // ═══════════════════════════════════════════════════════
 recruiterSchema.post("save", async function (doc) {
   try {
@@ -247,7 +245,7 @@ recruiterSchema.methods.getLockedField = function () {
 const Recruiter = mongoose.model("Recruiter", recruiterSchema);
 
 // ═══════════════════════════════════════════════════════
-// 🚀 AUTO-HEAL ENGINE (Runs inside live production environment)
+// 🚀 AUTO-HEAL ENGINE
 // ═══════════════════════════════════════════════════════
 const autoHealDatabase = async () => {
   try {
@@ -264,7 +262,7 @@ const autoHealDatabase = async () => {
         await collection.dropIndex(idxName);
         console.log(`🧹 Auto-Heal: Dropped old index ${idxName}`);
       } catch (e) {
-        // Index didn't exist or already dropped, ignore safely
+        // ignore
       }
     }
 
