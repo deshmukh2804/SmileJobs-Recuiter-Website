@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { AppRoute } from '../types';
 import { jobService } from '../services/jobService';
 import {
-  Briefcase, CheckCircle2, FileEdit, PauseCircle, XCircle, Search, 
-  X, RotateCcw, Plus, ShieldCheck, MapPin, Star, Eye, Edit3, Trash2, 
-  MessageCircle, Phone, PlayCircle, Loader2, AlertTriangle, Users
+  Briefcase, CheckCircle2, FileEdit, PauseCircle, XCircle, Search,
+  X, RotateCcw, Plus, ShieldCheck, MapPin, Star, Eye, Edit3, Trash2,
+  MessageCircle, Phone, PlayCircle, Loader2, AlertTriangle, Users,
+  Clock, ShieldAlert, Info
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -18,6 +19,9 @@ interface MyJobsViewProps {
   onShowToast?: (msg: string) => void;
 }
 
+// ✅ UPDATED: Added "Pending Approval" and "Rejected" statuses
+type JobStatus = 'Live' | 'Draft' | 'Paused' | 'Closed' | 'Pending Approval' | 'Rejected' | 'Expired';
+
 interface BackendJob {
   _id: string;
   title: string;
@@ -30,7 +34,7 @@ interface BackendJob {
   workMode?: string;
   department?: string;
   role?: string;
-  status: 'Live' | 'Draft' | 'Paused' | 'Closed';
+  status: JobStatus;
   isActive?: boolean;
   featured?: boolean;
   isNew?: boolean;
@@ -61,6 +65,15 @@ interface BackendJob {
   contactVisibility?: { whatsapp?: boolean; mobile?: boolean };
   jobDescription?: string;
   qualification?: string;
+
+  // ✅ NEW: Approval tracking fields
+  approvalStatus?: 'pending_review' | 'approved' | 'rejected' | 'suspended';
+  submittedForReviewAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
+  reviewNotes?: string;
+  lastEditedAfterApproval?: boolean;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -104,6 +117,27 @@ const getInitials = (name?: string): string => {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 };
 
+// ✅ NEW: Get status badge style
+const getStatusBadge = (status: JobStatus) => {
+  switch (status) {
+    case 'Live':
+      return { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-500 animate-pulse', icon: CheckCircle2 };
+    case 'Pending Approval':
+      return { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500 animate-pulse', icon: Clock };
+    case 'Rejected':
+      return { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', dot: 'bg-rose-500', icon: ShieldAlert };
+    case 'Draft':
+      return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200', dot: 'bg-slate-400', icon: FileEdit };
+    case 'Paused':
+      return { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500', icon: PauseCircle };
+    case 'Expired':
+      return { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200', dot: 'bg-gray-400', icon: XCircle };
+    case 'Closed':
+    default:
+      return { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', dot: 'bg-rose-500', icon: XCircle };
+  }
+};
+
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════════ */
@@ -118,7 +152,10 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'All' | 'Live' | 'Draft' | 'Paused' | 'Closed'>('All');
+
+  // ✅ UPDATED: Added "Pending Approval" and "Rejected" to tabs
+  const [activeTab, setActiveTab] = useState<'All' | JobStatus>('All');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [jobTypeFilter, setJobTypeFilter] = useState('All');
   const [workModeFilter, setWorkModeFilter] = useState('All');
@@ -126,6 +163,9 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  // ✅ NEW: Show rejection reason modal
+  const [rejectionModal, setRejectionModal] = useState<{ title: string; reason: string } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -229,9 +269,12 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     });
   }, [jobs, activeTab, searchQuery, workModeFilter, jobTypeFilter]);
 
+  // ✅ UPDATED: Added pendingApproval and rejected counters
   const counts = useMemo(() => ({
     total: jobs.length,
     live: jobs.filter(j => j.status === 'Live').length,
+    pendingApproval: jobs.filter(j => j.status === 'Pending Approval').length,
+    rejected: jobs.filter(j => j.status === 'Rejected').length,
     draft: jobs.filter(j => j.status === 'Draft').length,
     paused: jobs.filter(j => j.status === 'Paused').length,
     closed: jobs.filter(j => j.status === 'Closed').length,
@@ -239,13 +282,12 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     totalApplicants: jobs.reduce((s, j) => s + (j.applicantsCount || 0), 0),
   }), [jobs]);
 
-  const handleStatusChange = async (jobId: string, newStatus: 'Live' | 'Draft' | 'Paused' | 'Closed') => {
+  const handleStatusChange = async (jobId: string, newStatus: 'Draft' | 'Paused' | 'Closed') => {
     setActionLoading(jobId);
     try {
       await jobService.updateStatus(jobId, newStatus);
-      setJobs(prev => prev.map(j => j._id === jobId ? { ...j, status: newStatus, isActive: newStatus !== 'Closed' } : j));
+      setJobs(prev => prev.map(j => j._id === jobId ? { ...j, status: newStatus, isActive: false } : j));
       const msgs: Record<string, string> = {
-        Live: 'Job activated successfully',
         Paused: 'Job paused',
         Closed: 'Job closed',
         Draft: 'Moved to draft',
@@ -273,9 +315,23 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     }
   };
 
+  // ✅ UPDATED: Only Live jobs can be paused (admin controls approval)
   const handleToggleStatus = async (job: BackendJob) => {
-    const newStatus = job.status === 'Live' ? 'Paused' : 'Live';
-    await handleStatusChange(job._id, newStatus);
+    if (job.status === 'Live') {
+      await handleStatusChange(job._id, 'Paused');
+    } else if (job.status === 'Paused') {
+      // Resuming paused → stays as Paused in UI, admin needs to re-approve? Actually we allow Live
+      setActionLoading(job._id);
+      try {
+        await jobService.updateStatus(job._id, 'Draft');
+        setJobs(prev => prev.map(j => j._id === job._id ? { ...j, status: 'Draft', isActive: false } : j));
+        showToast('Job moved to draft. Edit and submit for approval to make it live.', 'success');
+      } catch (err: any) {
+        showToast(err.response?.data?.message || 'Failed to update status', 'error');
+      } finally {
+        setActionLoading(null);
+      }
+    }
   };
 
   const handleDeleteJob = async (id: string) => {
@@ -322,6 +378,38 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         >
           {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
           <span>{toast.msg}</span>
+        </div>
+      )}
+
+      {/* ✅ NEW: Rejection Reason Modal */}
+      {rejectionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setRejectionModal(null)}>
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-200 p-6 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
+                <ShieldAlert className="w-6 h-6 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#2C1B57]">Job Rejected</h3>
+                <p className="text-xs text-gray-500 truncate max-w-[280px]">{rejectionModal.title}</p>
+              </div>
+            </div>
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-lg mb-4">
+              <p className="text-xs text-rose-700 font-bold mb-1">Admin's Reason:</p>
+              <p className="text-sm text-rose-900 leading-relaxed">{rejectionModal.reason || 'No specific reason provided.'}</p>
+            </div>
+            <p className="text-xs text-gray-600 mb-4">
+              Please edit your job posting to address the issues above and it will be automatically resubmitted for review.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setRejectionModal(null)}
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -411,44 +499,63 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       </div>
 
-      {/* ─── KPI Cards ─── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* ✅ NEW: Important Notice About Approval Workflow */}
+      {counts.pendingApproval > 0 && (
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+            <Info className="w-5 h-5 text-blue-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-blue-900">Admin Review in Progress</h3>
+            <p className="text-xs text-blue-700 mt-0.5">
+              You have <strong>{counts.pendingApproval} job{counts.pendingApproval !== 1 ? 's' : ''}</strong> awaiting admin approval. Jobs usually get reviewed within 24-48 hours. Once approved, they'll be visible to candidates automatically.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ UPDATED: KPI Cards — Added Pending Approval & Rejected */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {[
-          { label: 'Total Jobs', value: counts.total, icon: Briefcase, filter: 'All' as const },
-          { label: 'Live', value: counts.live, icon: CheckCircle2, filter: 'Live' as const },
-          { label: 'Draft', value: counts.draft, icon: FileEdit, filter: 'Draft' as const },
-          { label: 'Paused', value: counts.paused, icon: PauseCircle, filter: 'Paused' as const },
-          { label: 'Closed', value: counts.closed, icon: XCircle, filter: 'Closed' as const },
+          { label: 'Total', value: counts.total, icon: Briefcase, filter: 'All' as const, color: 'text-gray-500' },
+          { label: 'Live', value: counts.live, icon: CheckCircle2, filter: 'Live' as const, color: 'text-emerald-600' },
+          { label: 'Pending', value: counts.pendingApproval, icon: Clock, filter: 'Pending Approval' as const, color: 'text-amber-600' },
+          { label: 'Rejected', value: counts.rejected, icon: ShieldAlert, filter: 'Rejected' as const, color: 'text-rose-600' },
+          { label: 'Draft', value: counts.draft, icon: FileEdit, filter: 'Draft' as const, color: 'text-slate-600' },
+          { label: 'Paused', value: counts.paused, icon: PauseCircle, filter: 'Paused' as const, color: 'text-amber-600' },
+          { label: 'Closed', value: counts.closed, icon: XCircle, filter: 'Closed' as const, color: 'text-rose-600' },
         ].map(kpi => (
           <div
             key={kpi.label}
             onClick={() => setActiveTab(kpi.filter)}
-            className={`bg-white p-4 rounded-2xl border transition-all ${
-              activeTab === kpi.filter 
-                ? 'border-[#42326E] shadow-md ring-2 ring-[#42326E]/10' 
+            className={`bg-white p-3 rounded-2xl border transition-all ${
+              activeTab === kpi.filter
+                ? 'border-[#42326E] shadow-md ring-2 ring-[#42326E]/10'
                 : 'border-gray-200 shadow-sm cursor-pointer hover:border-[#42326E] hover:shadow-md'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className={`text-xs font-bold ${activeTab === kpi.filter ? 'text-[#42326E]' : 'text-gray-500'}`}>
+              <span className={`text-[10px] font-bold ${activeTab === kpi.filter ? 'text-[#42326E]' : 'text-gray-500'}`}>
                 {kpi.label}
               </span>
-              <span className={`p-1.5 rounded-lg ${activeTab === kpi.filter ? 'bg-[#42326E] text-white' : 'bg-[#F8F5FF] text-[#42326E]'}`}>
-                <kpi.icon className="w-4 h-4" />
+              <span className={`p-1 rounded-lg ${activeTab === kpi.filter ? 'bg-[#42326E] text-white' : `bg-gray-50 ${kpi.color}`}`}>
+                <kpi.icon className="w-3.5 h-3.5" />
               </span>
             </div>
-            <h3 className="text-2xl text-[#2C1B57] font-extrabold tracking-tight mt-3">
+            <h3 className="text-xl text-[#2C1B57] font-extrabold tracking-tight mt-2">
               {kpi.value.toLocaleString()}
             </h3>
           </div>
         ))}
       </div>
 
-      {/* ─── Tabs ─── */}
+      {/* ✅ UPDATED: Tabs — Added Pending Approval & Rejected */}
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
         {[
           { key: 'All' as const, label: 'All Jobs', count: counts.total },
           { key: 'Live' as const, label: 'Live', count: counts.live },
+          { key: 'Pending Approval' as const, label: 'Pending Approval', count: counts.pendingApproval, highlight: true },
+          { key: 'Rejected' as const, label: 'Rejected', count: counts.rejected },
           { key: 'Draft' as const, label: 'Draft', count: counts.draft },
           { key: 'Paused' as const, label: 'Paused', count: counts.paused },
           { key: 'Closed' as const, label: 'Closed', count: counts.closed },
@@ -459,13 +566,19 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
               activeTab === tab.key
                 ? 'bg-[#42326E] text-white shadow-md'
+                : tab.highlight && tab.count > 0
+                ? 'bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100'
                 : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
             }`}
           >
             <span>{tab.label}</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[10px] ${
-                activeTab === tab.key ? 'bg-white/20' : 'bg-gray-100 text-gray-500'
+                activeTab === tab.key
+                  ? 'bg-white/20'
+                  : tab.highlight && tab.count > 0
+                  ? 'bg-amber-500 text-white animate-pulse'
+                  : 'bg-gray-100 text-gray-500'
               }`}
             >
               {tab.count.toLocaleString()}
@@ -565,203 +678,225 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
 
           {/* List Rows */}
           <div className="divide-y divide-gray-100">
-            {filteredJobs.map(job => (
-              <div
-                key={job._id}
-                className={`group grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-5 items-center hover:bg-[#F8F5FF]/30 transition-colors ${
-                  job.featured ? 'bg-amber-50/20' : ''
-                }`}
-              >
-                {/* Col 1: Job Details */}
-                <div className="col-span-1 md:col-span-4 flex items-start gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-xl bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-sm shadow-sm shrink-0 overflow-hidden">
-                    {job.companyLogo?.url ? (
-                      <img
-                        src={job.companyLogo.url}
-                        alt={job.companyName}
-                        className="w-full h-full object-cover"
-                        onError={e => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          const p = (e.target as HTMLImageElement).parentElement;
-                          if (p) p.textContent = getInitials(job.companyName);
+            {filteredJobs.map(job => {
+              const statusBadge = getStatusBadge(job.status);
+              const StatusIcon = statusBadge.icon;
+              const isPending = job.status === 'Pending Approval';
+              const isRejected = job.status === 'Rejected';
+              const isLiveOrPaused = job.status === 'Live' || job.status === 'Paused';
+
+              return (
+                <div
+                  key={job._id}
+                  className={`group grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-5 items-center hover:bg-[#F8F5FF]/30 transition-colors ${
+                    job.featured ? 'bg-amber-50/20' : ''
+                  } ${isRejected ? 'bg-rose-50/30' : ''} ${isPending ? 'bg-amber-50/20' : ''}`}
+                >
+                  {/* Col 1: Job Details */}
+                  <div className="col-span-1 md:col-span-4 flex items-start gap-3 min-w-0">
+                    <div className="w-12 h-12 rounded-xl bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-sm shadow-sm shrink-0 overflow-hidden">
+                      {job.companyLogo?.url ? (
+                        <img
+                          src={job.companyLogo.url}
+                          alt={job.companyName}
+                          className="w-full h-full object-cover"
+                          onError={e => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const p = (e.target as HTMLImageElement).parentElement;
+                            if (p) p.textContent = getInitials(job.companyName);
+                          }}
+                        />
+                      ) : (
+                        getInitials(job.companyName)
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <h3
+                          onClick={() => handleViewJob(job._id)}
+                          className="font-extrabold text-[#2C1B57] text-[15px] cursor-pointer hover:text-[#42326E] hover:underline truncate"
+                          title={job.title}
+                        >
+                          {job.title}
+                        </h3>
+                        {job.featured && (
+                          <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-xs text-gray-600 font-semibold truncate">{job.companyName}</span>
+                        {job.isCompanyVerified && (
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        {job.isNew && !isPending && !isRejected && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-[#EDE6FA] text-[#42326E] font-bold text-[9px]">
+                            NEW
+                          </span>
+                        )}
+                        <span className="text-[10px] text-gray-500 font-semibold">{job.jobType || 'Full-Time'}</span>
+                        <span className="text-[10px] text-gray-400">•</span>
+                        <span className="font-mono text-[9px] text-gray-400">#{job._id.slice(-6)}</span>
+                      </div>
+
+                      {/* ✅ NEW: Pending Review indicator */}
+                      {isPending && (
+                        <div className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-amber-100 border border-amber-200 rounded-lg">
+                          <Clock className="w-3 h-3 text-amber-700" />
+                          <span className="text-[10px] text-amber-800 font-bold">
+                            {job.lastEditedAfterApproval ? 'Edited — Awaiting re-approval' : 'Awaiting admin approval'}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* ✅ NEW: Rejection reason button */}
+                      {isRejected && (
+                        <button
+                          onClick={() => setRejectionModal({ title: job.title, reason: job.rejectionReason || '' })}
+                          className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-rose-100 hover:bg-rose-200 border border-rose-200 rounded-lg transition-colors"
+                        >
+                          <ShieldAlert className="w-3 h-3 text-rose-700" />
+                          <span className="text-[10px] text-rose-800 font-bold">View rejection reason</span>
+                        </button>
+                      )}
+
+                      <div className="flex items-center gap-2 mt-2">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold ${
+                            job.contactVisibility?.whatsapp
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-gray-100 text-gray-400 border border-gray-200'
+                          }`}
+                        >
+                          <MessageCircle className="w-2.5 h-2.5" /> WA
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold ${
+                            job.contactVisibility?.mobile
+                              ? 'bg-[#EDE6FA] text-[#42326E] border border-[#D7C8ED]'
+                              : 'bg-gray-100 text-gray-400 border border-gray-200'
+                          }`}
+                        >
+                          <Phone className="w-2.5 h-2.5" /> Mobile
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Col 2: Location */}
+                  <div className="col-span-1 md:col-span-2 text-xs text-gray-700">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      <span className="truncate font-bold">{job.location?.city || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1.5 text-gray-500 font-medium">
+                      <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                      <span>{job.workMode || 'On-site'}</span>
+                    </div>
+                  </div>
+
+                  {/* Col 3: Salary */}
+                  <div className="col-span-1 md:col-span-2">
+                    <div className="text-sm font-extrabold text-[#2C1B57] font-mono tracking-tight">
+                      {formatSalary(job.salary?.min, job.salary?.max, job.salary?.currency, job.salary?.period)}
+                    </div>
+                    <div className="text-[10px] text-gray-500 font-medium mt-1">
+                      {formatDate(job.postedAt || job.createdAt)}
+                    </div>
+                  </div>
+
+                  {/* Col 4: Applicants */}
+                  <div className="col-span-1 md:col-span-1 text-center">
+                    <button
+                      onClick={() => onViewApplicants?.(job._id, job.title)}
+                      disabled={!job.applicantsCount}
+                      className="text-[15px] font-extrabold text-[#42326E] hover:text-[#2C1B57] hover:underline disabled:text-gray-400 disabled:no-underline"
+                    >
+                      {job.applicantsCount || 0}
+                      <span className="text-gray-400 font-medium text-[10px]">/{job.applicantsCap || 100}</span>
+                    </button>
+                    <div className="w-full bg-[#F8F5FF] border border-[#E8E3EF] h-1.5 rounded-full overflow-hidden mt-1.5">
+                      <div
+                        className="bg-[#42326E] h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(100, Math.round(((job.applicantsCount || 0) / (job.applicantsCap || 100)) * 100))}%`,
                         }}
                       />
-                    ) : (
-                      getInitials(job.companyName)
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <h3
-                        onClick={() => handleViewJob(job._id)}
-                        className="font-extrabold text-[#2C1B57] text-[15px] cursor-pointer hover:text-[#42326E] hover:underline truncate"
-                        title={job.title}
-                      >
-                        {job.title}
-                      </h3>
-                      {job.featured && (
-                        <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" title="Featured" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <span className="text-xs text-gray-600 font-semibold truncate">{job.companyName}</span>
-                      {job.isCompanyVerified && (
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" title="Verified" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      {job.isNew && (
-                        <span className="px-1.5 py-0.5 rounded-md bg-[#EDE6FA] text-[#42326E] font-bold text-[9px]">
-                          NEW
-                        </span>
-                      )}
-                      <span className="text-[10px] text-gray-500 font-semibold">{job.jobType || 'Full-Time'}</span>
-                      <span className="text-[10px] text-gray-400">•</span>
-                      <span className="font-mono text-[9px] text-gray-400">#{job._id.slice(-6)}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold ${
-                          job.contactVisibility?.whatsapp
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-gray-100 text-gray-400 border border-gray-200'
-                        }`}
-                      >
-                        <MessageCircle className="w-2.5 h-2.5" /> WA
-                      </span>
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold ${
-                          job.contactVisibility?.mobile
-                            ? 'bg-[#EDE6FA] text-[#42326E] border border-[#D7C8ED]'
-                            : 'bg-gray-100 text-gray-400 border border-gray-200'
-                        }`}
-                      >
-                        <Phone className="w-2.5 h-2.5" /> Mobile
-                      </span>
                     </div>
                   </div>
-                </div>
 
-                {/* Col 2: Location */}
-                <div className="col-span-1 md:col-span-2 text-xs text-gray-700">
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span className="truncate font-bold">{job.location?.city || 'N/A'}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1.5 text-gray-500 font-medium">
-                    <Briefcase className="w-3.5 h-3.5 shrink-0" />
-                    <span>{job.workMode || 'On-site'}</span>
-                  </div>
-                </div>
-
-                {/* Col 3: Salary */}
-                <div className="col-span-1 md:col-span-2">
-                  <div className="text-sm font-extrabold text-[#2C1B57] font-mono tracking-tight">
-                    {formatSalary(job.salary?.min, job.salary?.max, job.salary?.currency, job.salary?.period)}
-                  </div>
-                  <div className="text-[10px] text-gray-500 font-medium mt-1">
-                    {formatDate(job.postedAt || job.createdAt)}
-                  </div>
-                </div>
-
-                {/* Col 4: Applicants */}
-                <div className="col-span-1 md:col-span-1 text-center">
-                  <button
-                    onClick={() => onViewApplicants?.(job._id, job.title)}
-                    className="text-[15px] font-extrabold text-[#42326E] hover:text-[#2C1B57] hover:underline"
-                  >
-                    {job.applicantsCount || 0}
-                    <span className="text-gray-400 font-medium text-[10px]">/{job.applicantsCap || 100}</span>
-                  </button>
-                  <div className="w-full bg-[#F8F5FF] border border-[#E8E3EF] h-1.5 rounded-full overflow-hidden mt-1.5">
-                    <div
-                      className="bg-[#42326E] h-full rounded-full transition-all"
-                      style={{
-                        width: `${Math.min(100, Math.round(((job.applicantsCount || 0) / (job.applicantsCap || 100)) * 100))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Col 5: Status */}
-                <div className="col-span-1 md:col-span-1 text-center">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold whitespace-nowrap border ${
-                      job.status === 'Live'
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        : job.status === 'Draft'
-                        ? 'bg-slate-50 text-slate-700 border-slate-200'
-                        : job.status === 'Paused'
-                        ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : 'bg-rose-50 text-rose-800 border-rose-200'
-                    }`}
-                  >
+                  {/* ✅ UPDATED Col 5: Status Badge */}
+                  <div className="col-span-1 md:col-span-1 text-center">
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        job.status === 'Live'
-                          ? 'bg-emerald-500 animate-pulse'
-                          : job.status === 'Draft'
-                          ? 'bg-slate-400'
-                          : job.status === 'Paused'
-                          ? 'bg-amber-500'
-                          : 'bg-rose-500'
-                      }`}
-                    />
-                    {job.status}
-                  </span>
-                </div>
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[9px] font-extrabold whitespace-nowrap border ${statusBadge.bg} ${statusBadge.text} ${statusBadge.border}`}
+                    >
+                      <StatusIcon className="w-2.5 h-2.5" />
+                      {job.status}
+                    </span>
+                  </div>
 
-                {/* Col 6: Actions */}
-                <div className="col-span-1 md:col-span-2 flex items-center justify-end gap-1.5">
-                  <button
-                    onClick={() => handleViewJob(job._id)}
-                    className="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                    title="View Public Listing"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleEditJob(job._id)}
-                    className="px-3 py-2 rounded-lg bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] text-xs font-bold flex items-center gap-1.5 hover:bg-[#42326E] hover:text-white transition-all shadow-sm"
-                    title="Edit Job"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span className="hidden lg:inline">Edit</span>
-                  </button>
-                  <button
-                    onClick={() => handleToggleFeature(job)}
-                    disabled={actionLoading === job._id}
-                    className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
-                      job.featured ? 'text-amber-500 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'
-                    }`}
-                    title={job.featured ? 'Remove Feature' : 'Feature Job'}
-                  >
-                    <Star className={`w-4 h-4 ${job.featured ? 'fill-amber-400' : ''}`} />
-                  </button>
-                  <button
-                    onClick={() => handleToggleStatus(job)}
-                    disabled={actionLoading === job._id || job.status === 'Closed'}
-                    className="p-2 rounded-lg text-gray-500 hover:text-[#42326E] hover:bg-[#F8F5FF] transition-colors disabled:opacity-30"
-                    title={job.status === 'Live' ? 'Pause Job' : 'Activate Job'}
-                  >
-                    {actionLoading === job._id ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-[#42326E]" />
-                    ) : job.status === 'Live' ? (
-                      <PauseCircle className="w-4 h-4" />
-                    ) : (
-                      <PlayCircle className="w-4 h-4" />
+                  {/* ✅ UPDATED Col 6: Actions — context-aware */}
+                  <div className="col-span-1 md:col-span-2 flex items-center justify-end gap-1.5">
+                    <button
+                      onClick={() => handleViewJob(job._id)}
+                      className="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      title="View Listing"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleEditJob(job._id)}
+                      className="px-3 py-2 rounded-lg bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] text-xs font-bold flex items-center gap-1.5 hover:bg-[#42326E] hover:text-white transition-all shadow-sm"
+                      title={isRejected ? 'Edit & resubmit' : 'Edit Job'}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span className="hidden lg:inline">{isRejected ? 'Fix & Resubmit' : 'Edit'}</span>
+                    </button>
+
+                    {/* Feature button only for Live jobs */}
+                    {job.status === 'Live' && (
+                      <button
+                        onClick={() => handleToggleFeature(job)}
+                        disabled={actionLoading === job._id}
+                        className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
+                          job.featured ? 'text-amber-500 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'
+                        }`}
+                        title={job.featured ? 'Remove Feature' : 'Feature Job'}
+                      >
+                        <Star className={`w-4 h-4 ${job.featured ? 'fill-amber-400' : ''}`} />
+                      </button>
                     )}
-                  </button>
-                  <button
-                    onClick={() => setConfirmDeleteId(job._id)}
-                    className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                    title="Delete Job"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+
+                    {/* Pause/Resume button only for Live or Paused jobs */}
+                    {isLiveOrPaused && (
+                      <button
+                        onClick={() => handleToggleStatus(job)}
+                        disabled={actionLoading === job._id}
+                        className="p-2 rounded-lg text-gray-500 hover:text-[#42326E] hover:bg-[#F8F5FF] transition-colors disabled:opacity-30"
+                        title={job.status === 'Live' ? 'Pause Job' : 'Move to Draft'}
+                      >
+                        {actionLoading === job._id ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-[#42326E]" />
+                        ) : job.status === 'Live' ? (
+                          <PauseCircle className="w-4 h-4" />
+                        ) : (
+                          <PlayCircle className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setConfirmDeleteId(job._id)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      title="Delete Job"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -773,10 +908,14 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
             Showing <strong className="text-[#2C1B57]">{filteredJobs.length}</strong> of{' '}
             <strong className="text-[#2C1B57]">{counts.total}</strong> jobs
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <strong className="text-[#2C1B57]">{counts.live}</strong> Live
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+              <strong className="text-[#2C1B57]">{counts.pendingApproval}</strong> Pending
             </span>
             <span className="flex items-center gap-1.5">
               <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />

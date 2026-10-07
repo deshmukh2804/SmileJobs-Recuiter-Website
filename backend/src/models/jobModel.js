@@ -10,7 +10,6 @@ const jobSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ✅ NO HARDCODED DEFAULTS — must be provided by recruiter's actual profile
     companyName: { type: String, required: true },
     companyWebsite: { type: String, default: "" },
     companyLogo: {
@@ -68,7 +67,6 @@ const jobSchema = new mongoose.Schema(
     jobTiming: { type: String, default: "" },
     workingDays: { type: String, default: "" },
 
-    // ✅ NO HARDCODED CONTACT — pulled from recruiter's actual profile
     contactPerson: {
       name: { type: String, default: "" },
       designation: { type: String, default: "" },
@@ -84,10 +82,12 @@ const jobSchema = new mongoose.Schema(
       mobile: { type: Boolean, default: true },
     },
     whatsappContactEnabled: { type: Boolean, default: true },
+
+    // ✅ UPDATED: Added "Pending Approval" and "Rejected" to match Admin model
     status: {
       type: String,
-      enum: ["Live", "Draft", "Paused", "Closed"],
-      default: "Live",
+      enum: ["Pending Approval", "Live", "Draft", "Paused", "Closed", "Rejected", "Expired"],
+      default: "Pending Approval",
     },
     isActive: { type: Boolean, default: true },
     featured: { type: Boolean, default: false },
@@ -100,10 +100,24 @@ const jobSchema = new mongoose.Schema(
     establishedYear: { type: Number, default: null },
     noticePeriod: { type: String, default: "" },
     organizationSize: { type: String, default: "" },
+
+    // ✅ NEW: Approval tracking fields (synced with Admin model)
+    approvalStatus: {
+      type: String,
+      enum: ["pending_review", "approved", "rejected", "suspended"],
+      default: "pending_review",
+      index: true,
+    },
+    submittedForReviewAt: { type: Date, default: Date.now },
+    approvedAt: { type: Date, default: null },
+    approvedBy: { type: String, default: "" },
+    rejectionReason: { type: String, default: "" },
+    reviewNotes: { type: String, default: "" },
+    lastEditedAfterApproval: { type: Boolean, default: false },
   },
   {
     timestamps: true,
-    suppressReservedKeysWarning: true, // ✅ FIXES THE [MONGOOSE] isNew WARNING
+    suppressReservedKeysWarning: true,
   }
 );
 

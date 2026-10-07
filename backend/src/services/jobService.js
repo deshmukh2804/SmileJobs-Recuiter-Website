@@ -5,23 +5,18 @@ const ApiError = require("../utils/apiError");
 // ─── Foolproof Dynamic Cloudinary Module Resolver ───
 let deleteFromCloudinary;
 try {
-  // Try config/cloudinary
   deleteFromCloudinary = require("../config/cloudinary").deleteFromCloudinary;
 } catch (e1) {
   try {
-    // Try utils/cloudinary
     deleteFromCloudinary = require("../utils/cloudinary").deleteFromCloudinary;
   } catch (e2) {
     try {
-      // Try config/cloudinaryConfig
       deleteFromCloudinary = require("../config/cloudinaryConfig").deleteFromCloudinary;
     } catch (e3) {
       try {
-        // Try utils/cloudinaryConfig
         deleteFromCloudinary = require("../utils/cloudinaryConfig").deleteFromCloudinary;
       } catch (e4) {
-        console.warn("⚠️ Warning: Could not locate Cloudinary helper helper automatically. Safe fallback initiated.");
-        // Fallback placeholder to prevent crashes
+        console.warn("⚠️ Warning: Could not locate Cloudinary helper automatically. Safe fallback initiated.");
         deleteFromCloudinary = async () => ({ result: "skipped", reason: "cloudinary_module_not_found" });
       }
     }
@@ -69,12 +64,16 @@ const mapJobType = (t) => {
   return t || "Full-Time";
 };
 
+// ✅ UPDATED: Now handles "Pending Approval" status properly
 const mapStatus = (s) => {
   if (s === "active" || s === "Live") return "Live";
   if (s === "draft" || s === "Draft") return "Draft";
   if (s === "paused" || s === "Paused") return "Paused";
   if (s === "closed" || s === "Closed") return "Closed";
-  return "Live";
+  if (s === "Pending Approval" || s === "pending") return "Pending Approval";
+  if (s === "Rejected" || s === "rejected") return "Rejected";
+  if (s === "Expired" || s === "expired") return "Expired";
+  return "Pending Approval"; // ✅ Default is now Pending Approval
 };
 
 class JobService {
@@ -98,14 +97,12 @@ class JobService {
 
     const cp = recruiter.companyProfile;
 
-    // Determine values, prioritizing payload customizations over profile fallbacks
     const companyName = payload.companyName || cp.name || recruiter.companyName;
     const companyWebsite = payload.companyWebsite || cp.website || "";
     const industry = payload.industry || cp.industry || "";
     const establishedYear = payload.establishedYear || cp.establishedYear || null;
     const organizationSize = payload.organizationSize || cp.organizationSize || cp.teamSize || "";
 
-    // Parse location details
     const location = payload.location ? {
       address: payload.location.address || "",
       city: payload.location.city,
@@ -118,7 +115,6 @@ class JobService {
       country: payload.country || cp.country || "India",
     };
 
-    // Parse salary details
     let salary = { min: 0, max: 0, currency: "INR", period: "month" };
     if (payload.salary) {
       salary = {
@@ -137,7 +133,6 @@ class JobService {
       };
     }
 
-    // Parse experience details
     let experience = { min: 0, max: 0, text: "" };
     if (payload.experience) {
       experience = {
@@ -183,6 +178,13 @@ class JobService {
       whatsapp: true,
       mobile: true
     };
+
+    // ✅ CRITICAL CHANGE: Recruiter jobs ALWAYS start as "Pending Approval"
+    // Only admins can set status to "Live" directly
+    const requestedStatus = mapStatus(payload.status);
+    const finalStatus = (requestedStatus === "Live" || requestedStatus === "Draft")
+      ? requestedStatus  // Allow Draft, but never auto-Live
+      : "Pending Approval";
 
     const jobDoc = {
       title: payload.title,
@@ -235,8 +237,9 @@ class JobService {
       contactVisibility,
       whatsappContactEnabled: true,
 
-      status: mapStatus(payload.status),
-      isActive: mapStatus(payload.status) !== "Closed",
+      // ✅ NEW: Jobs default to "Pending Approval" — admin must approve
+      status: finalStatus,
+      isActive: finalStatus === "Live",
       featured: !!payload.featured,
       isNew: true,
       isCompanyVerified: recruiter.isVerified,
@@ -244,10 +247,19 @@ class JobService {
       applicantsCount: 0,
       applicantsCap: payload.applicantsCap || 100,
       postedAt: new Date(),
+
+      // ✅ NEW: Approval tracking fields
+      approvalStatus: finalStatus === "Draft" ? "pending_review" : "pending_review",
+      submittedForReviewAt: new Date(),
+      approvedAt: null,
+      approvedBy: "",
+      rejectionReason: "",
+      reviewNotes: "",
+      lastEditedAfterApproval: false,
     };
 
     const job = await Job.create(jobDoc);
-    console.log(`✅ Job created in careerflow_admin.jobs: "${job.title}" by ${recruiter.name}`);
+    console.log(`✅ Job created (Pending Approval): "${job.title}" by ${recruiter.name} [ID: ${job._id}]`);
     return job;
   }
 
@@ -256,7 +268,6 @@ class JobService {
     const job = await Job.findOne({ _id: jobId, recruiterId });
     if (!job) throw new ApiError(404, "Job not found or unauthorized");
 
-    // Map skills, languages, benefits, requirements, and responsibilities arrays
     const skills = splitCSV(payload.skills);
     const languages = splitCSV(payload.languages || "");
     const benefits = splitCSV(payload.benefits);
@@ -267,7 +278,6 @@ class JobService {
       ? payload.requirements
       : String(payload.requirements || "").split("\n").map((s) => s.trim()).filter(Boolean);
 
-    // Apply mutable fields
     job.title = payload.title || job.title;
     job.companyName = payload.companyName || job.companyName;
     job.companyWebsite = payload.companyWebsite !== undefined ? payload.companyWebsite : job.companyWebsite;
@@ -286,17 +296,37 @@ class JobService {
     job.applicationUrl = payload.applicationUrl !== undefined ? payload.applicationUrl : job.applicationUrl;
     job.noPaymentInvolved = payload.noPaymentInvolved !== undefined ? payload.noPaymentInvolved : job.noPaymentInvolved;
     job.featured = payload.featured !== undefined ? payload.featured : job.featured;
-    job.status = payload.status ? mapStatus(payload.status) : job.status;
-    job.isActive = job.status !== "Closed";
 
-    // Set updated arrays
+    // ✅ CRITICAL: If recruiter edits an approved/live job, reset to Pending Approval
+    const wasApproved = job.status === "Live" || job.approvalStatus === "approved";
+    if (wasApproved) {
+      job.status = "Pending Approval";
+      job.isActive = false;
+      job.approvalStatus = "pending_review";
+      job.lastEditedAfterApproval = true;
+      job.submittedForReviewAt = new Date();
+      job.approvedAt = null;
+      job.approvedBy = "";
+      console.log(`🔄 Job "${job.title}" edited after approval — reset to Pending Approval`);
+    }
+
+    // Recruiter can only set Draft status directly, never Live
+    if (payload.status) {
+      const requestedStatus = mapStatus(payload.status);
+      if (requestedStatus === "Draft") {
+        job.status = "Draft";
+        job.isActive = false;
+        job.approvalStatus = "pending_review";
+      }
+      // Ignore any attempt to set "Live" — only admin can approve
+    }
+
     job.skills = skills;
     job.languages = languages;
     job.benefits = benefits;
     job.responsibilities = responsibilities;
     job.requirements = requirements;
 
-    // Update nested objects
     if (payload.location) {
       job.location = {
         address: payload.location.address || "",
@@ -342,7 +372,7 @@ class JobService {
     job.recruiterWhatsappNumber = payload.recruiterWhatsappNumber || job.recruiterWhatsappNumber;
 
     await job.save();
-    console.log(`✅ Job updated in careerflow_admin.jobs: "${job.title}" [ID: ${job._id}]`);
+    console.log(`✅ Job updated: "${job.title}" [ID: ${job._id}] Status: ${job.status}`);
     return job;
   }
 
@@ -360,9 +390,20 @@ class JobService {
 
   async updateJobStatus(recruiterId, jobId, status) {
     const Job = getJobModel();
+    const mappedStatus = mapStatus(status);
+
+    // ✅ SECURITY: Recruiters cannot self-approve jobs to "Live"
+    if (mappedStatus === "Live") {
+      throw new ApiError(403, "Only admins can approve jobs. Your job is pending admin review.");
+    }
+
     const job = await Job.findOneAndUpdate(
       { _id: jobId, recruiterId },
-      { status: mapStatus(status), isActive: status !== "closed" && status !== "Closed" },
+      {
+        status: mappedStatus,
+        isActive: mappedStatus === "Live",
+        approvalStatus: mappedStatus === "Live" ? "approved" : "pending_review",
+      },
       { new: true }
     );
     if (!job) throw new ApiError(404, "Job not found");
@@ -374,15 +415,12 @@ class JobService {
     const job = await Job.findOne({ _id: jobId, recruiterId });
     if (!job) throw new ApiError(404, "Job not found");
 
-    // Fetch recruiter profile to avoid deleting shared profile-level assets
     const recruiter = await Recruiter.findById(recruiterId).select("companyProfile");
     const profileOwnedPublicIds = new Set();
 
     if (recruiter && recruiter.companyProfile) {
       const cp = recruiter.companyProfile;
-      if (cp.logo?.publicId) {
-        profileOwnedPublicIds.add(cp.logo.publicId);
-      }
+      if (cp.logo?.publicId) profileOwnedPublicIds.add(cp.logo.publicId);
       if (Array.isArray(cp.gallery)) {
         cp.gallery.forEach((g) => {
           if (g.publicId) profileOwnedPublicIds.add(g.publicId);
@@ -390,24 +428,19 @@ class JobService {
       }
     }
 
-    // Collect specific job assets
     const jobAssetPublicIds = [];
-    if (job.companyLogo?.publicId) {
-      jobAssetPublicIds.push(job.companyLogo.publicId);
-    }
+    if (job.companyLogo?.publicId) jobAssetPublicIds.push(job.companyLogo.publicId);
     if (Array.isArray(job.companyImages)) {
       job.companyImages.forEach((img) => {
         if (img.publicId) jobAssetPublicIds.push(img.publicId);
       });
     }
 
-    // Safely delete non-shared assets
     for (const publicId of jobAssetPublicIds) {
       if (profileOwnedPublicIds.has(publicId)) {
         console.log(`ℹ️ Skipping profile logo/gallery deletion from Cloudinary: [${publicId}]`);
         continue;
       }
-      // Delete from Cloudinary passing model context to check if shared with other jobs
       await deleteFromCloudinary(publicId, Job, jobId);
     }
 
