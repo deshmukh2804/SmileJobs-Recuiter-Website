@@ -9,14 +9,14 @@ import {
 import { companyService } from '../services/companyService';
 import { authService } from '../services/authService';
 import {
-  Save, X, FileText, Upload, Clock, AlertCircle, Trash2, Loader2, Send, Sparkles,
+  Save, X, FileText, Upload, Clock, AlertCircle, Trash2, Loader2, Send,
   FileCheck2, BadgeCheck, XCircle, ImagePlus, Camera, CheckCircle2, Info, Building2,
   User, Globe, Phone, Mail, MapPin, Calendar, Hash, Briefcase, Heart, ChevronDown,
   Eye, Shield, Star, Zap, TrendingUp, Award, ArrowRight, ChevronUp,
 } from 'lucide-react';
 
 const MAX_GALLERY = 5;
-const REQUIRED_DOCS = 3; // ✅ Reduced to 3
+const REQUIRED_DOCS = 3;
 
 const LIMITS = {
   companyName: { min: 2, max: 100 },
@@ -44,7 +44,7 @@ const LIMITS = {
 } as const;
 
 // ═══════════════════════════════════════════════════════
-// INDIAN STATES LIST
+// INDIAN STATES
 // ═══════════════════════════════════════════════════════
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -58,7 +58,7 @@ const INDIAN_STATES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-// INDUSTRIES LIST
+// INDUSTRIES
 // ═══════════════════════════════════════════════════════
 const INDUSTRIES = [
   'Information Technology (IT)', 'Software Development', 'IT Services & Consulting',
@@ -105,7 +105,7 @@ const COMPANY_TYPES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-// ✅ UPDATED DOCUMENT TYPES - 3 REQUIRED
+// DOCUMENT TYPES
 // ═══════════════════════════════════════════════════════
 const DOC_TYPES = [
   {
@@ -132,7 +132,7 @@ const DOC_TYPES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-// HELPERS
+// HELPERS - FIXED PHONE VALIDATION
 // ═══════════════════════════════════════════════════════
 const countWords = (text: string | null | undefined): number => {
   if (!text || typeof text !== 'string') return 0;
@@ -141,29 +141,49 @@ const countWords = (text: string | null | undefined): number => {
   return trimmed.split(/\s+/).filter((w) => w.length > 0).length;
 };
 
-const isValidPhone = (phone: string) => /^[+]?[\d\s-]{10,15}$/.test(phone.replace(/\s/g, ''));
+// ✅ FIXED: Phone validation - counts only digits
+const getPhoneDigitCount = (phone: string): number => {
+  if (!phone) return 0;
+  return phone.replace(/[^\d]/g, '').length;
+};
+
+const isValidPhone = (phone: string): boolean => {
+  if (!phone) return false;
+  const digits = getPhoneDigitCount(phone);
+  return digits >= 10 && digits <= 15;
+};
+
 const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const isValidUrl = (url: string) => {
   if (!url) return true;
   try { new URL(url.startsWith('http') ? url : `https://${url}`); return true; } catch { return false; }
 };
-const isValidGST = (gst: string) => {
-  if (!gst) return true;
-  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gst.toUpperCase());
-};
-const isValidPAN = (pan: string) => /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase());
-const isValidTAN = (tan: string) => /^[A-Z]{4}[0-9]{5}[A-Z]{1}$/.test(tan.toUpperCase());
 
-// ✅ Accepts either PAN or TAN format
-const isValidPanOrTan = (val: string) => {
-  if (!val) return true;
+// ✅ GST validation - strict format
+const isValidGST = (gst: string): boolean => {
+  if (!gst) return false;
+  const cleaned = gst.toUpperCase().trim();
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(cleaned);
+};
+
+const isValidPAN = (pan: string): boolean => {
+  if (!pan) return false;
+  return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase().trim());
+};
+
+const isValidTAN = (tan: string): boolean => {
+  if (!tan) return false;
+  return /^[A-Z]{4}[0-9]{5}[A-Z]{1}$/.test(tan.toUpperCase().trim());
+};
+
+const isValidPanOrTan = (val: string): boolean => {
+  if (!val) return false;
   return isValidPAN(val) || isValidTAN(val);
 };
 
-// Detect whether the entered value looks like PAN or TAN
 const detectPanOrTanType = (val: string): 'PAN' | 'TAN' | '' => {
   if (!val) return '';
-  const upper = val.toUpperCase();
+  const upper = val.toUpperCase().trim();
   if (isValidPAN(upper)) return 'PAN';
   if (isValidTAN(upper)) return 'TAN';
   return '';
@@ -340,21 +360,22 @@ const CharCounter: React.FC<{ current: number; max: number; min?: number; label?
 };
 
 // ═══════════════════════════════════════════════════════
-// VALIDATED INPUT
+// VALIDATED INPUT (standard text)
 // ═══════════════════════════════════════════════════════
 const ValidatedInput: React.FC<{
-  label: string | React.ReactNode; value: string; onChange: (val: string) => void; maxLength: number;
+  label: string; value: string; onChange: (val: string) => void; maxLength: number;
   minLength?: number; required?: boolean; type?: string; placeholder?: string;
   icon?: React.ReactNode; validator?: (val: string) => boolean; validationMsg?: string;
-  hint?: string | React.ReactNode; disabled?: boolean; transform?: 'uppercase' | 'none';
+  hint?: string; disabled?: boolean; transform?: 'uppercase' | 'none';
 }> = ({ label, value, onChange, maxLength, minLength, required, type = 'text', placeholder, icon, validator, validationMsg, hint, disabled, transform }) => {
   const [touched, setTouched] = useState(false);
-  const isOverLimit = value.length > maxLength;
-  const isUnderMin = touched && required && minLength ? value.length > 0 && value.length < minLength : false;
-  const isEmpty = touched && required && value.length === 0;
-  const isInvalid = touched && validator && value.length > 0 ? !validator(value) : false;
+  const safeValue = value || '';
+  const isOverLimit = safeValue.length > maxLength;
+  const isUnderMin = touched && required && minLength ? safeValue.length > 0 && safeValue.length < minLength : false;
+  const isEmpty = touched && required && safeValue.length === 0;
+  const isInvalid = touched && validator && safeValue.length > 0 ? !validator(safeValue) : false;
   const hasError = isOverLimit || isUnderMin || isEmpty || isInvalid;
-  const isValid = touched && !hasError && value.length > 0;
+  const isValid = touched && !hasError && safeValue.length > 0;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value;
@@ -369,7 +390,7 @@ const ValidatedInput: React.FC<{
         {label}{required && <span className="text-rose-500">*</span>}
       </label>
       <div className="relative">
-        <input type={type} value={value} onChange={handleChange} onBlur={() => setTouched(true)} placeholder={placeholder} disabled={disabled}
+        <input type={type} value={safeValue} onChange={handleChange} onBlur={() => setTouched(true)} placeholder={placeholder} disabled={disabled}
           className={`w-full text-xs py-2.5 px-3.5 bg-[#FCFCF7] border rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
             hasError ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-200'
             : isValid ? 'border-emerald-300 focus:border-emerald-400 focus:ring-emerald-200'
@@ -387,7 +408,61 @@ const ValidatedInput: React.FC<{
           {isOverLimit && <p className="text-[10px] text-rose-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Exceeds maximum length</p>}
           {hint && !hasError && <p className="text-[10px] text-[#9C94A7] mt-1">{hint}</p>}
         </div>
-        <CharCounter current={value.length} max={maxLength} min={minLength} />
+        <CharCounter current={safeValue.length} max={maxLength} min={minLength} />
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════
+// ✅ NEW: PHONE INPUT (counts digits properly)
+// ═══════════════════════════════════════════════════════
+const PhoneInput: React.FC<{
+  label: string; value: string; onChange: (val: string) => void;
+  required?: boolean; placeholder?: string; icon?: React.ReactNode; hint?: string;
+}> = ({ label, value, onChange, required, placeholder, icon, hint }) => {
+  const [touched, setTouched] = useState(false);
+  const safeValue = value || '';
+  const digitCount = getPhoneDigitCount(safeValue);
+  const isEmpty = touched && required && digitCount === 0;
+  const isUnderMin = touched && digitCount > 0 && digitCount < 10;
+  const isValid = touched && isValidPhone(safeValue);
+  const hasError = isEmpty || isUnderMin || (touched && digitCount > 0 && !isValidPhone(safeValue));
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Allow only digits, +, -, spaces
+    const val = e.target.value.replace(/[^0-9+\-\s]/g, '');
+    const digits = val.replace(/[^\d]/g, '');
+    if (digits.length <= 15) onChange(val);
+  };
+
+  return (
+    <div>
+      <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-1.5">
+        {icon && <span className="text-[#6F687A]">{icon}</span>}
+        {label}{required && <span className="text-rose-500">*</span>}
+      </label>
+      <div className="relative">
+        <input type="tel" value={safeValue} onChange={handleChange} onBlur={() => setTouched(true)} placeholder={placeholder}
+          className={`w-full text-xs py-2.5 px-3.5 bg-[#FCFCF7] border rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+            hasError ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-200'
+            : isValid ? 'border-emerald-300 focus:border-emerald-400 focus:ring-emerald-200'
+            : 'border-[#E8E3EF] focus:border-[#42326E] focus:ring-[#B29CFE]/30'
+          }`}
+        />
+        {isValid && <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />}
+        {hasError && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-500" />}
+      </div>
+      <div className="flex items-start justify-between gap-2 mt-1">
+        <div className="flex-1">
+          {isEmpty && <p className="text-[10px] text-rose-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Phone number is required</p>}
+          {isUnderMin && <p className="text-[10px] text-amber-600 flex items-center gap-1"><Info className="w-3 h-3" /> Need {10 - digitCount} more digit{10 - digitCount !== 1 ? 's' : ''}</p>}
+          {isValid && <p className="text-[10px] text-emerald-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Valid phone number ({digitCount} digits)</p>}
+          {hint && !hasError && !isValid && <p className="text-[10px] text-[#9C94A7]">{hint}</p>}
+        </div>
+        <span className={`text-[10px] font-mono font-semibold tabular-nums ${isValid ? 'text-emerald-600' : isUnderMin ? 'text-amber-600' : 'text-gray-400'}`}>
+          {digitCount}/15 digits
+        </span>
       </div>
     </div>
   );
@@ -485,12 +560,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingGallery, setIsUploadingGallery] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showRequirementsChecklist, setShowRequirementsChecklist] = useState(false);
 
-  // ✅ UNIFIED PAN/TAN input state (bound to whichever field has data)
   const [panTanInput, setPanTanInput] = useState<string>(
     (company.panNumber || company.tanNumber || '').toUpperCase()
   );
@@ -558,12 +630,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     }));
   }, []);
 
-  // ✅ Handle unified PAN/TAN input — auto-route to correct field
   const handlePanTanChange = useCallback((val: string) => {
     const upper = val.toUpperCase().slice(0, 10);
     setPanTanInput(upper);
-
-    // Auto-detect type and route to correct field
     const detectedType = detectPanOrTanType(upper);
     setProfile((prev) => {
       const next = { ...prev };
@@ -574,7 +643,6 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         next.tanNumber = upper;
         next.panNumber = '';
       } else {
-        // Still typing — store in panNumber temporarily until valid
         next.panNumber = upper;
         next.tanNumber = '';
       }
@@ -609,16 +677,15 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     if (profile.contactPerson?.name && profile.contactPerson.name.length >= LIMITS.contactName.min) done++;
     if (profile.contactPerson?.designation && profile.contactPerson.designation.length >= LIMITS.designation.min) done++;
     if (profile.contactEmail && isValidEmail(profile.contactEmail)) done++;
-    if (profile.contactPhone && isValidPhone(profile.contactPhone)) done++;
+    if (isValidPhone(profile.contactPhone || '')) done++;
     return { done, total };
   }, [profile.contactPerson, profile.contactEmail, profile.contactPhone]);
 
-  // ✅ UPDATED legal completion: GST + (PAN or TAN) + MSME Number
   const legalCompletion = useMemo(() => {
     let done = 0;
     const total = 3;
-    if (profile.gstNumber && isValidGST(profile.gstNumber)) done++;
-    if (panTanInput && isValidPanOrTan(panTanInput)) done++;
+    if (isValidGST(profile.gstNumber || '')) done++;
+    if (isValidPanOrTan(panTanInput)) done++;
     if (profile.msmeNumber && profile.msmeNumber.length >= LIMITS.msmeNumber.min) done++;
     return { done, total };
   }, [profile.gstNumber, panTanInput, profile.msmeNumber]);
@@ -655,13 +722,16 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       missing.push({ section: 'Contact', field: 'Designation', helpText: `Enter at least ${LIMITS.designation.min} characters`, sectionId: 'section-contact' });
     if (!profile.contactEmail || !isValidEmail(profile.contactEmail))
       missing.push({ section: 'Contact', field: 'HR Email', helpText: 'Enter a valid email', sectionId: 'section-contact' });
-    if (!profile.contactPhone || !isValidPhone(profile.contactPhone))
-      missing.push({ section: 'Contact', field: 'Phone Number', helpText: 'Enter 10-15 digit phone', sectionId: 'section-contact' });
+    if (!isValidPhone(profile.contactPhone || '')) {
+      const digits = getPhoneDigitCount(profile.contactPhone || '');
+      missing.push({ section: 'Contact', field: 'Phone Number', helpText: digits === 0 ? 'Enter phone number' : `Currently ${digits} digits — need 10-15 digits`, sectionId: 'section-contact' });
+    }
 
-    if (!profile.gstNumber || !isValidGST(profile.gstNumber))
-      missing.push({ section: 'Legal', field: 'GST Number', helpText: 'Enter valid 15-digit GSTIN', sectionId: 'section-legal' });
-    if (!panTanInput || !isValidPanOrTan(panTanInput))
-      missing.push({ section: 'Legal', field: 'PAN / TAN Number', helpText: 'Enter valid PAN (ABCDE1234F) or TAN (ABCD12345E)', sectionId: 'section-legal' });
+    if (!isValidGST(profile.gstNumber || '')) {
+      missing.push({ section: 'Legal', field: 'GST Number', helpText: 'Format: 2 digits + 5 letters + 4 digits + 1 letter + 1 alphanumeric + Z + 1 alphanumeric (e.g. 27ABCDE1234F1Z5)', sectionId: 'section-legal' });
+    }
+    if (!isValidPanOrTan(panTanInput))
+      missing.push({ section: 'Legal', field: 'PAN / TAN Number', helpText: 'PAN: 5 letters + 4 digits + 1 letter (ABCDE1234F) | TAN: 4 letters + 5 digits + 1 letter (ABCD12345E)', sectionId: 'section-legal' });
     if (!profile.msmeNumber || profile.msmeNumber.length < LIMITS.msmeNumber.min)
       missing.push({ section: 'Legal', field: 'Shop Act / MSME Number', helpText: `Enter registration number (min ${LIMITS.msmeNumber.min} chars)`, sectionId: 'section-legal' });
 
@@ -688,24 +758,6 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     { label: 'Documents', done: docCompletion.done === docCompletion.total, active: basicCompletion.done === basicCompletion.total && contactCompletion.done === contactCompletion.total && legalCompletion.done === legalCompletion.total && docCompletion.done < docCompletion.total },
     { label: 'Submit', done: verificationStatus === 'approved', active: overallReadiness.allDone && (verificationStatus === 'not_submitted' || verificationStatus === 'rejected') },
   ], [basicCompletion, contactCompletion, legalCompletion, docCompletion, verificationStatus, overallReadiness]);
-
-  // ═══ HANDLERS ═══
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setSaveSuccess(false);
-    onUpdateCompany(profile);
-    try {
-      await companyService.updateProfile(profile);
-      setSaveSuccess(true);
-      onShowToast('✓ Company profile saved successfully!');
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err: any) {
-      onShowToast(err.response?.data?.message || 'Saved locally');
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const handleAddPerk = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -820,47 +872,49 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const handleSubmitVerification = async () => {
+  // ✅ UNIFIED: Save profile + submit verification in one action
+  const handleSaveAndSubmit = async () => {
     if (!overallReadiness.allDone) {
       setShowRequirementsChecklist(true);
-      onShowToast(`⚠️ ${missingRequirements.length} required field(s) still missing.`);
+      onShowToast(`⚠️ ${missingRequirements.length} field(s) still invalid. See checklist above.`);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+
     setIsSubmitting(true);
     try {
+      // Step 1: Save profile
+      onUpdateCompany(profile);
       await companyService.updateProfile(profile);
+
+      // Step 2: Submit for verification
       const res = await companyService.submitVerification();
       setVerificationStatus('pending');
       setRejectionReason('');
-      authService.updateCachedUser({ verificationStatus: 'pending', verificationSubmittedAt: res.data.verificationSubmittedAt });
-      onUpdateAuthUser?.({ verificationStatus: 'pending', verificationSubmittedAt: res.data.verificationSubmittedAt });
-      onShowToast('🎉 Verification submitted! Review within 24-48 hours.');
+      authService.updateCachedUser({
+        verificationStatus: 'pending',
+        verificationSubmittedAt: res.data.verificationSubmittedAt,
+      });
+      onUpdateAuthUser?.({
+        verificationStatus: 'pending',
+        verificationSubmittedAt: res.data.verificationSubmittedAt,
+      });
+      onShowToast('🎉 Profile saved and submitted for verification! Review within 24-48 hours.');
       setShowRequirementsChecklist(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       const errorMsg = err.response?.data?.message || 'Submission failed';
       onShowToast(`❌ ${errorMsg}`);
-      if (errorMsg.toLowerCase().includes('complete') || errorMsg.toLowerCase().includes('please')) setShowRequirementsChecklist(true);
+      if (errorMsg.toLowerCase().includes('complete') || errorMsg.toLowerCase().includes('please')) {
+        setShowRequirementsChecklist(true);
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleAutoApprove = async () => {
-    try {
-      await companyService.autoApprove();
-      setVerificationStatus('approved');
-      setRejectionReason('');
-      authService.updateCachedUser({ verificationStatus: 'approved', isVerified: true });
-      onUpdateAuthUser?.({ verificationStatus: 'approved', isVerified: true });
-      onShowToast('🎉 Company auto-verified! You can now post jobs.');
-    } catch (err: any) {
-      onShowToast(err.response?.data?.message || 'Auto-approve failed');
-    }
-  };
-
   const statusConfig = {
-    not_submitted: { bg: 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200', iconBg: 'bg-amber-100', icon: <AlertCircle className="w-5 h-5 text-amber-600" />, title: 'Verification Required', desc: 'Complete your profile and upload 3 required documents to get verified.', textColor: 'text-amber-900', descColor: 'text-amber-700' },
+    not_submitted: { bg: 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200', iconBg: 'bg-amber-100', icon: <AlertCircle className="w-5 h-5 text-amber-600" />, title: 'Verification Required', desc: 'Complete all required fields and upload 3 documents, then submit for verification.', textColor: 'text-amber-900', descColor: 'text-amber-700' },
     pending: { bg: 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200', iconBg: 'bg-blue-100', icon: <Clock className="w-5 h-5 text-blue-600 animate-pulse" />, title: 'Verification Under Review', desc: 'Our team is reviewing your documents. Usually takes 24-48 business hours.', textColor: 'text-blue-900', descColor: 'text-blue-700' },
     approved: { bg: 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200', iconBg: 'bg-emerald-100', icon: <BadgeCheck className="w-5 h-5 text-emerald-600" />, title: 'Verified Trusted Company', desc: 'Your brand is verified. Job postings display the verified trust badge.', textColor: 'text-emerald-900', descColor: 'text-emerald-700' },
     rejected: { bg: 'bg-gradient-to-r from-rose-50 to-pink-50 border-rose-200', iconBg: 'bg-rose-100', icon: <XCircle className="w-5 h-5 text-rose-600" />, title: 'Verification Rejected', desc: rejectionReason || 'Documents were not clear. Please review, update, and resubmit.', textColor: 'text-rose-900', descColor: 'text-rose-700' },
@@ -881,6 +935,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       </div>
     );
   }
+
+  const canSubmit = overallReadiness.allDone && (verificationStatus === 'not_submitted' || verificationStatus === 'rejected');
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300 pb-32">
@@ -914,8 +970,8 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center"><AlertCircle className="w-5 h-5 text-rose-600" /></div>
               <div>
-                <h3 className="text-sm font-extrabold text-rose-900">{missingRequirements.length} Required Field{missingRequirements.length > 1 ? 's' : ''} Missing</h3>
-                <p className="text-xs text-rose-700 mt-0.5">Click on any item to jump to that section</p>
+                <h3 className="text-sm font-extrabold text-rose-900">{missingRequirements.length} Required Field{missingRequirements.length > 1 ? 's' : ''} Missing or Invalid</h3>
+                <p className="text-xs text-rose-700 mt-0.5">Click on any item to jump to that section and fix it</p>
               </div>
             </div>
             <button onClick={() => setShowRequirementsChecklist(false)} className="p-1.5 hover:bg-rose-100 rounded-lg text-rose-600 transition-colors"><X className="w-4 h-4" /></button>
@@ -950,7 +1006,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         </div>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-4">
+      <div className="space-y-4">
         {/* ═══ COMPANY INFO ═══ */}
         <Section id="section-company" title="Company Information" subtitle="Branding, type & core details" icon={<Building2 className="w-5 h-5 text-[#42326E]" />} completionCount={basicCompletion} defaultOpen={true}
           hasErrors={missingRequirements.some((m) => m.sectionId === 'section-company')}>
@@ -1091,13 +1147,32 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
             <ValidatedInput label="Contact Person Name" value={profile.contactPerson?.name || ''} onChange={(v) => setContactPerson('name', v)} maxLength={LIMITS.contactName.max} minLength={LIMITS.contactName.min} required icon={<User className="w-3.5 h-3.5" />} placeholder="Rahul Dev" />
             <ValidatedInput label="Designation" value={profile.contactPerson?.designation || ''} onChange={(v) => setContactPerson('designation', v)} maxLength={LIMITS.designation.max} minLength={LIMITS.designation.min} required icon={<Award className="w-3.5 h-3.5" />} placeholder="Chief Talent Officer" />
             <ValidatedInput label="Official HR Email" value={profile.contactEmail || ''} onChange={(v) => updateField('contactEmail', v)} maxLength={LIMITS.email.max} minLength={LIMITS.email.min} required type="email" icon={<Mail className="w-3.5 h-3.5" />} placeholder="careers@acme.org" validator={isValidEmail} validationMsg="Enter a valid email" />
-            <ValidatedInput label="Recruiter Phone" value={profile.contactPhone || ''} onChange={(v) => updateField('contactPhone', v.replace(/[^0-9+\-\s]/g, ''))} maxLength={LIMITS.phone.max} minLength={LIMITS.phone.min} required type="tel" icon={<Phone className="w-3.5 h-3.5" />} placeholder="+919876543210" validator={isValidPhone} validationMsg="10-15 digit phone number" />
-            <ValidatedInput label="WhatsApp Number" value={profile.whatsappNumber || ''} onChange={(v) => updateField('whatsappNumber', v.replace(/[^0-9+\-\s]/g, ''))} maxLength={LIMITS.whatsapp.max} icon={<Phone className="w-3.5 h-3.5" />} placeholder="+919876543210" validator={(v) => !v || isValidPhone(v)} validationMsg="Valid phone number" hint="Optional — For candidate outreach" />
+
+            {/* ✅ FIXED PHONE INPUT - uses dedicated PhoneInput component */}
+            <PhoneInput
+              label="Recruiter Phone"
+              value={profile.contactPhone || ''}
+              onChange={(v) => updateField('contactPhone', v)}
+              required
+              placeholder="+919876543210"
+              icon={<Phone className="w-3.5 h-3.5" />}
+              hint="Enter 10-15 digit phone number with or without country code"
+            />
+
+            <PhoneInput
+              label="WhatsApp Number"
+              value={profile.whatsappNumber || ''}
+              onChange={(v) => updateField('whatsappNumber', v)}
+              placeholder="+919876543210"
+              icon={<Phone className="w-3.5 h-3.5" />}
+              hint="Optional — For candidate outreach"
+            />
+
             <ValidatedInput label="LinkedIn Profile URL" value={profile.linkedInUrl || ''} onChange={(v) => updateField('linkedInUrl', v)} maxLength={LIMITS.linkedIn.max} type="url" icon={<Globe className="w-3.5 h-3.5" />} placeholder="https://linkedin.com/company/acme" validator={isValidUrl} validationMsg="Enter valid URL" hint="Optional — Builds brand trust" />
           </div>
         </Section>
 
-        {/* ═══ LEGAL (UPDATED) ═══ */}
+        {/* ═══ LEGAL ═══ */}
         <Section id="section-legal" title="Legal & Tax Details" subtitle="Required business identifiers for verification" icon={<Shield className="w-5 h-5 text-[#42326E]" />} completionCount={legalCompletion} defaultOpen={true}
           hasErrors={missingRequirements.some((m) => m.sectionId === 'section-legal')}>
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mb-4">
@@ -1117,11 +1192,11 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
               placeholder="27ABCDE1234F1Z5"
               transform="uppercase"
               validator={isValidGST}
-              validationMsg="Enter valid 15-digit GSTIN"
+              validationMsg="Format: 2 digits + 5 letters + 4 digits + 1 letter + 1 alphanumeric + Z + 1 alphanumeric"
               hint="e.g. 27ABCDE1234F1Z5"
             />
 
-            {/* ✅ UNIFIED PAN/TAN Number with auto-detection */}
+            {/* PAN/TAN unified */}
             <div>
               <label className="flex items-center gap-1.5 text-xs font-bold text-[#49454F] mb-1.5">
                 <Shield className="w-3.5 h-3.5 text-[#6F687A]" />
@@ -1156,22 +1231,29 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-500" />
                 )}
               </div>
-              {panTanInput && !isValidPanOrTan(panTanInput) && (
-                <p className="text-[10px] text-rose-500 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> Invalid format. PAN: 5 letters + 4 digits + 1 letter | TAN: 4 letters + 5 digits + 1 letter
-                </p>
-              )}
-              {!panTanInput && (
-                <p className="text-[10px] text-[#9C94A7] mt-1">Enter either PAN (ABCDE1234F) or TAN (ABCD12345E) — one is sufficient</p>
-              )}
-              {panTanInput && isValidPanOrTan(panTanInput) && (
-                <p className="text-[10px] text-emerald-600 mt-1 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Valid {detectedPanTanType} number
-                </p>
-              )}
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <div className="flex-1">
+                  {panTanInput && !isValidPanOrTan(panTanInput) && (
+                    <p className="text-[10px] text-rose-500 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> PAN: 5 letters + 4 digits + 1 letter | TAN: 4 letters + 5 digits + 1 letter
+                    </p>
+                  )}
+                  {!panTanInput && (
+                    <p className="text-[10px] text-[#9C94A7]">Enter either PAN (ABCDE1234F) or TAN (ABCD12345E) — one is sufficient</p>
+                  )}
+                  {panTanInput && isValidPanOrTan(panTanInput) && (
+                    <p className="text-[10px] text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Valid {detectedPanTanType} number
+                    </p>
+                  )}
+                </div>
+                <span className={`text-[10px] font-mono font-semibold tabular-nums ${isValidPanOrTan(panTanInput) ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  {panTanInput.length}/10
+                </span>
+              </div>
             </div>
 
-            {/* ✅ Shop Act / MSME Number */}
+            {/* MSME Number */}
             <ValidatedInput
               label="Shop Act / MSME Number"
               value={profile.msmeNumber || ''}
@@ -1200,111 +1282,105 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           </div>
         </Section>
 
-        {/* SAVE BAR */}
-        <div className="bg-white/95 backdrop-blur-md p-4 rounded-3xl border border-[#E8E3EF] shadow-sm flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-[#6F687A]">
-            {saveSuccess ? <span className="flex items-center gap-1.5 text-emerald-600 font-extrabold animate-in fade-in"><CheckCircle2 className="w-4 h-4 animate-bounce" /> Profile Saved!</span>
-            : <span className="flex items-center gap-1.5 font-semibold"><Info className="w-4 h-4 text-[#B29CFE]" /> Save before submitting for verification</span>}
-          </div>
-          <button type="submit" disabled={isSaving} className={`px-6 py-2.5 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2 transition-all duration-200 ${isSaving ? 'bg-[#42326E]/70 cursor-wait' : saveSuccess ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-[#42326E] hover:bg-[#322554]'}`}>
-            {isSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : saveSuccess ? <><CheckCircle2 className="w-4 h-4" /> Saved ✓</> : <><Save className="w-4 h-4" /> Save Profile</>}
-          </button>
-        </div>
-      </form>
-
-      {/* ═══ DOCUMENTS (3 ONLY) ═══ */}
-      <Section id="section-docs" title="Verification Documents" subtitle={`Upload all ${REQUIRED_DOCS} required documents`} icon={<FileCheck2 className="w-5 h-5 text-[#42326E]" />}
-        badge={docCompletion.done === docCompletion.total ? <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-extrabold">COMPLETE</span> : <span className="px-2.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[9px] font-extrabold">INCOMPLETE</span>}
-        completionCount={docCompletion} defaultOpen={true} hasErrors={missingRequirements.some((m) => m.sectionId === 'section-docs')}>
-        <div className="space-y-3">
-          {DOC_TYPES.map((docType) => {
-            const uploaded = documents.find((d) => d.docType === docType.value);
-            const isUploading = uploadingDocType === docType.value;
-            const IconComponent = docType.icon;
-            const canModify = verificationStatus === 'not_submitted' || verificationStatus === 'rejected';
-            return (
-              <div key={docType.value} className={`p-4 rounded-2xl border-2 transition-all duration-200 ${uploaded ? 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-300' : 'bg-[#FCFCF7] border-[#E8E3EF] hover:border-[#B29CFE]/40'}`}>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${uploaded ? 'bg-emerald-100' : 'bg-[#EDE6FA]'}`}>
-                      {uploaded ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <IconComponent className="w-5 h-5 text-[#42326E]" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-xs font-bold text-[#2C1B57] truncate">{docType.label}</h4>
-                        <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded text-[9px] font-extrabold tracking-wider shrink-0">REQUIRED</span>
+        {/* ═══ DOCUMENTS ═══ */}
+        <Section id="section-docs" title="Verification Documents" subtitle={`Upload all ${REQUIRED_DOCS} required documents`} icon={<FileCheck2 className="w-5 h-5 text-[#42326E]" />}
+          badge={docCompletion.done === docCompletion.total ? <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-extrabold">COMPLETE</span> : <span className="px-2.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[9px] font-extrabold">INCOMPLETE</span>}
+          completionCount={docCompletion} defaultOpen={true} hasErrors={missingRequirements.some((m) => m.sectionId === 'section-docs')}>
+          <div className="space-y-3">
+            {DOC_TYPES.map((docType) => {
+              const uploaded = documents.find((d) => d.docType === docType.value);
+              const isUploading = uploadingDocType === docType.value;
+              const IconComponent = docType.icon;
+              const canModify = verificationStatus === 'not_submitted' || verificationStatus === 'rejected';
+              return (
+                <div key={docType.value} className={`p-4 rounded-2xl border-2 transition-all duration-200 ${uploaded ? 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-300' : 'bg-[#FCFCF7] border-[#E8E3EF] hover:border-[#B29CFE]/40'}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${uploaded ? 'bg-emerald-100' : 'bg-[#EDE6FA]'}`}>
+                        {uploaded ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <IconComponent className="w-5 h-5 text-[#42326E]" />}
                       </div>
-                      <p className="text-[11px] text-[#6F687A] mt-0.5 truncate">
-                        {uploaded ? <span className="text-emerald-600 font-semibold flex items-center gap-1"><FileCheck2 className="w-3.5 h-3.5 shrink-0" />{uploaded.docName}{uploaded.size ? ` • ${(uploaded.size / 1024).toFixed(0)} KB` : ''}</span> : docType.description}
-                      </p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-[#2C1B57] truncate">{docType.label}</h4>
+                          <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded text-[9px] font-extrabold tracking-wider shrink-0">REQUIRED</span>
+                        </div>
+                        <p className="text-[11px] text-[#6F687A] mt-0.5 truncate">
+                          {uploaded ? <span className="text-emerald-600 font-semibold flex items-center gap-1"><FileCheck2 className="w-3.5 h-3.5 shrink-0" />{uploaded.docName}{uploaded.size ? ` • ${(uploaded.size / 1024).toFixed(0)} KB` : ''}</span> : docType.description}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    {uploaded && <a href={uploaded.url} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-[11px] font-bold text-[#42326E] hover:bg-[#EDE6FA] rounded-lg flex items-center gap-1.5 transition-colors"><Eye className="w-3.5 h-3.5" /> View</a>}
-                    {canModify && (
-                      <div className="flex items-center gap-1.5">
-                        {uploaded ? (
-                          <>
-                            <button type="button" onClick={() => docFileRefs.current[docType.value]?.click()} disabled={isUploading} className="px-3 py-1.5 text-[11px] font-bold text-amber-700 hover:bg-amber-50 rounded-lg flex items-center gap-1 transition-colors">
-                              {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Replace
+                    <div className="flex items-center justify-end gap-2">
+                      {uploaded && <a href={uploaded.url} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-[11px] font-bold text-[#42326E] hover:bg-[#EDE6FA] rounded-lg flex items-center gap-1.5 transition-colors"><Eye className="w-3.5 h-3.5" /> View</a>}
+                      {canModify && (
+                        <div className="flex items-center gap-1.5">
+                          {uploaded ? (
+                            <>
+                              <button type="button" onClick={() => docFileRefs.current[docType.value]?.click()} disabled={isUploading} className="px-3 py-1.5 text-[11px] font-bold text-amber-700 hover:bg-amber-50 rounded-lg flex items-center gap-1 transition-colors">
+                                {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Replace
+                              </button>
+                              <button type="button" onClick={() => handleDeleteDoc(uploaded._id, docType.value)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </>
+                          ) : (
+                            <button type="button" onClick={() => docFileRefs.current[docType.value]?.click()} disabled={isUploading} className="px-4 py-2 bg-[#42326E] hover:bg-[#322554] text-white text-[11px] font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all">
+                              {isUploading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading...</> : <><Upload className="w-3.5 h-3.5" /> Choose File</>}
                             </button>
-                            <button type="button" onClick={() => handleDeleteDoc(uploaded._id, docType.value)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
-                          </>
-                        ) : (
-                          <button type="button" onClick={() => docFileRefs.current[docType.value]?.click()} disabled={isUploading} className="px-4 py-2 bg-[#42326E] hover:bg-[#322554] text-white text-[11px] font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all">
-                            {isUploading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading...</> : <><Upload className="w-3.5 h-3.5" /> Choose File</>}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {!canModify && !uploaded && <span className="text-[10px] text-[#9C94A7] font-semibold italic">Locked</span>}
+                          )}
+                        </div>
+                      )}
+                      {!canModify && !uploaded && <span className="text-[10px] text-[#9C94A7] font-semibold italic">Locked</span>}
+                    </div>
+                    <input ref={(el) => { docFileRefs.current[docType.value] = el; }} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => handleDocUpload(docType.value, e)} />
                   </div>
-                  <input ref={(el) => { docFileRefs.current[docType.value] = el; }} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => handleDocUpload(docType.value, e)} />
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
 
-        <div className="mt-4 p-4 bg-[#F7F4FA] border border-[#E8E3EF] rounded-2xl">
-          <h4 className="text-[11px] font-bold text-[#2C1B57] mb-2 flex items-center gap-1.5"><Info className="w-3.5 h-3.5 text-[#B29CFE]" /> Document Guidelines</h4>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] text-[#6F687A]">
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Accepted: PDF, JPEG, PNG</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Max 5MB per file</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Must be clear and readable</li>
-            <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> All 3 documents are mandatory</li>
-          </ul>
-        </div>
-      </Section>
+          <div className="mt-4 p-4 bg-[#F7F4FA] border border-[#E8E3EF] rounded-2xl">
+            <h4 className="text-[11px] font-bold text-[#2C1B57] mb-2 flex items-center gap-1.5"><Info className="w-3.5 h-3.5 text-[#B29CFE]" /> Document Guidelines</h4>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] text-[#6F687A]">
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Accepted: PDF, JPEG, PNG</li>
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Max 5MB per file</li>
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> Must be clear and readable</li>
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> All 3 documents are mandatory</li>
+            </ul>
+          </div>
+        </Section>
+      </div>
 
-      {/* ═══ BOTTOM ACTION BAR ═══ */}
+      {/* ═══ BOTTOM SUBMIT BAR (NO AUTO-APPROVE, NO SEPARATE SAVE) ═══ */}
       {(verificationStatus === 'not_submitted' || verificationStatus === 'rejected') && (
         <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md z-50 animate-in slide-in-from-bottom duration-300">
-          <div className={`p-4 rounded-3xl shadow-2xl border-2 backdrop-blur-md ${overallReadiness.allDone ? 'bg-gradient-to-r from-emerald-500 to-teal-600 border-emerald-300' : 'bg-white/95 border-[#E8E3EF]'}`}>
+          <div className={`p-4 rounded-3xl shadow-2xl border-2 backdrop-blur-md ${canSubmit ? 'bg-gradient-to-r from-emerald-500 to-teal-600 border-emerald-300' : 'bg-white/95 border-[#E8E3EF]'}`}>
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${overallReadiness.allDone ? 'bg-white/20' : 'bg-amber-100'}`}>
-                {overallReadiness.allDone ? <Send className="w-5 h-5 text-white" /> : <AlertCircle className="w-5 h-5 text-amber-600" />}
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${canSubmit ? 'bg-white/20' : 'bg-amber-100'}`}>
+                {canSubmit ? <Send className="w-5 h-5 text-white" /> : <AlertCircle className="w-5 h-5 text-amber-600" />}
               </div>
               <div className="flex-1 min-w-0">
-                <div className={`text-xs font-extrabold ${overallReadiness.allDone ? 'text-white' : 'text-[#2C1B57]'}`}>
-                  {overallReadiness.allDone ? '🎉 Ready to Submit!' : `${missingRequirements.length} field${missingRequirements.length !== 1 ? 's' : ''} pending`}
+                <div className={`text-xs font-extrabold ${canSubmit ? 'text-white' : 'text-[#2C1B57]'}`}>
+                  {canSubmit ? '🎉 Ready to Submit!' : `${missingRequirements.length} field${missingRequirements.length !== 1 ? 's' : ''} pending`}
                 </div>
-                <div className={`text-[10px] mt-0.5 ${overallReadiness.allDone ? 'text-white/90' : 'text-[#6F687A]'}`}>
-                  {overallReadiness.allDone ? 'Click submit for admin review' : 'Complete required fields to submit'}
+                <div className={`text-[10px] mt-0.5 ${canSubmit ? 'text-white/90' : 'text-[#6F687A]'}`}>
+                  {canSubmit ? 'All fields validated. Click to save & submit.' : 'Complete all required fields to submit'}
                 </div>
               </div>
-              <button type="button" onClick={handleSubmitVerification} disabled={isSubmitting}
+              <button
+                type="button"
+                onClick={handleSaveAndSubmit}
+                disabled={isSubmitting || !canSubmit}
                 className={`px-4 py-2.5 text-xs font-extrabold rounded-xl shadow-md flex items-center gap-1.5 transition-all shrink-0 ${
-                  overallReadiness.allDone ? 'bg-white text-emerald-700 hover:bg-emerald-50' : 'bg-[#42326E] hover:bg-[#322554] text-white'
-                } disabled:opacity-60`}>
-                {isSubmitting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Submitting...</> : <><Send className="w-3.5 h-3.5" />{overallReadiness.allDone ? 'Submit Now' : 'Submit'}<ArrowRight className="w-3 h-3" /></>}
+                  canSubmit
+                    ? 'bg-white text-emerald-700 hover:bg-emerald-50'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                } disabled:opacity-60`}
+              >
+                {isSubmitting ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Submitting...</>
+                ) : (
+                  <><Send className="w-3.5 h-3.5" /> Submit <ArrowRight className="w-3 h-3" /></>
+                )}
               </button>
             </div>
-            {!overallReadiness.allDone && (
-              <button type="button" onClick={handleAutoApprove} className="mt-2 w-full px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition-colors">
-                <Sparkles className="w-3 h-3" /> Demo Auto-Approve (Skip Verification)
-              </button>
-            )}
           </div>
         </div>
       )}
