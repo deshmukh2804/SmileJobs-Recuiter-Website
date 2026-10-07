@@ -3,6 +3,9 @@ const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "verihire_recruiter_jwt_secret_key_2026";
 
+// ═══════════════════════════════════════════════════════
+// SUB-SCHEMAS
+// ═══════════════════════════════════════════════════════
 const documentSchema = new mongoose.Schema(
   {
     docType: {
@@ -37,23 +40,51 @@ const galleryImageSchema = new mongoose.Schema(
   { _id: true }
 );
 
+// ═══════════════════════════════════════════════════════
+// MAIN RECRUITER SCHEMA
+// ═══════════════════════════════════════════════════════
 const recruiterSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true, default: "" },
-    email: { type: String, lowercase: true, trim: true },
-    phone: { type: String, trim: true },
+
+    // ✅ SPARSE UNIQUE: allows multiple docs with NO email (phone-only users)
+    email: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      unique: true,
+      sparse: true,
+    },
+
+    // ✅ SPARSE UNIQUE: allows multiple docs with NO phone (email-only users)
+    phone: {
+      type: String,
+      trim: true,
+      unique: true,
+      sparse: true,
+    },
+
     avatar: {
       public_id: { type: String, default: "" },
       url: { type: String, default: "" },
     },
+
     companyName: { type: String, default: "" },
     designation: { type: String, default: "" },
-    googleId: { type: String },
+
+    // ✅ SPARSE UNIQUE: allows multiple docs with NO googleId
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
     loginMethod: {
       type: String,
       enum: ["google", "phone_otp", "email_otp"],
       required: true,
     },
+
     role: { type: String, default: "recruiter" },
     isActive: { type: Boolean, default: true },
     lastLogin: { type: Date, default: Date.now },
@@ -108,42 +139,48 @@ const recruiterSchema = new mongoose.Schema(
   {
     timestamps: true,
     autoIndex: false,
-    minimize: true, // ✅ CRITICAL: Removes empty objects
+    minimize: true,
+    // ✅ This is where the schema option belongs to ignore standard path warnings safely.
+    suppressReservedKeysWarning: true, 
   }
 );
 
-// ✅ Validation guard
+// ═══════════════════════════════════════════════════════
+// PRE-VALIDATE: Ensure at least one identifier exists
+// ═══════════════════════════════════════════════════════
 recruiterSchema.pre("validate", function (next) {
-  if (!this.phone && !this.email) {
-    return next(new Error("Recruiter must have either phone or email"));
+  if (!this.phone && !this.email && !this.googleId) {
+    return next(new Error("Recruiter must have at least one identifier: phone, email, or googleId"));
   }
   next();
 });
 
-// ✅ CRITICAL: Strip null/empty identifier fields at document level BEFORE save
+// ═══════════════════════════════════════════════════════
+// PRE-SAVE: Strip empty/null identifiers to work with sparse indexes
+// ═══════════════════════════════════════════════════════
 recruiterSchema.pre("save", function (next) {
-  // Strip null/empty email
-  if (!this.email || this.email === "" || this.email === null) {
-    this.email = undefined;
-    this.$__.activePaths.paths.email = undefined;
-    delete this._doc.email;
+  const fieldsToStrip = ["email", "phone", "googleId"];
+
+  for (const field of fieldsToStrip) {
+    const val = this[field];
+    if (val === null || val === undefined || (typeof val === "string" && val.trim() === "")) {
+      this[field] = undefined;
+      // Safely clear internal Mongoose tracking
+      if (this.$__ && this.$__.activePaths && this.$__.activePaths.paths) {
+        this.$__.activePaths.paths[field] = undefined;
+      }
+      if (this._doc && field in this._doc) {
+        delete this._doc[field];
+      }
+    }
   }
-  // Strip null/empty phone
-  if (!this.phone || this.phone === "" || this.phone === null) {
-    this.phone = undefined;
-    this.$__.activePaths.paths.phone = undefined;
-    delete this._doc.phone;
-  }
-  // Strip null/empty googleId
-  if (!this.googleId || this.googleId === "" || this.googleId === null) {
-    this.googleId = undefined;
-    this.$__.activePaths.paths.googleId = undefined;
-    delete this._doc.googleId;
-  }
+
   next();
 });
 
-// ✅ Post-insert cleanup: use raw MongoDB update to remove null fields
+// ═══════════════════════════════════════════════════════
+// POST-SAVE: Raw $unset to guarantee no null values in DB
+// ═══════════════════════════════════════════════════════
 recruiterSchema.post("save", async function (doc) {
   try {
     const unsetFields = {};
@@ -158,13 +195,16 @@ recruiterSchema.post("save", async function (doc) {
       );
     }
   } catch (err) {
-    console.warn("Post-save cleanup warning:", err.message);
+    console.warn("⚠️ Post-save cleanup warning:", err.message);
   }
 });
 
+// ═══════════════════════════════════════════════════════
+// INSTANCE METHODS
+// ═══════════════════════════════════════════════════════
 recruiterSchema.methods.generateToken = function () {
   return jwt.sign(
-    { id: this._id, role: "recruiter" },
+    { id: this._id, role: this.role || "recruiter" },
     JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRE || "30d" }
   );

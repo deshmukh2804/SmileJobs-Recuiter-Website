@@ -101,7 +101,10 @@ const jobSchema = new mongoose.Schema(
     noticePeriod: { type: String, default: "" },
     organizationSize: { type: String, default: "" },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    suppressReservedKeysWarning: true, // ✅ FIXES THE [MONGOOSE] isNew WARNING
+  }
 );
 
 let JobModel = null;

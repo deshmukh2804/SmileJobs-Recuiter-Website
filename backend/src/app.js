@@ -2,7 +2,24 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
+const mongoose = require("mongoose");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
+
+// ✅ Production Warning Interceptor: Silence the mongoose 'isNew' warning cleanly 
+// without crashing the server or throwing a SetOptionError.
+const originalEmit = process.emit;
+process.emit = function (name, data, ...args) {
+  if (
+    name === "warning" &&
+    data &&
+    data.message &&
+    data.message.includes("isNew") &&
+    data.message.includes("MONGOOSE")
+  ) {
+    return false; // Suppress warning output
+  }
+  return originalEmit.call(process, name, data, ...args);
+};
 
 // Routes
 const authRoutes = require("./routes/authRoutes");
@@ -14,7 +31,7 @@ const paymentWebhookRoutes = require("./routes/paymentWebhookRoutes");
 
 const app = express();
 
-// Trust reverse proxies (Nginx / DigitalOcean)
+// Trust reverse proxies (Nginx / DigitalOcean / Render / AWS)
 app.set("trust proxy", 1);
 
 // ═══ Allowed Origins Configuration ═══
@@ -31,7 +48,7 @@ const allowedOrigins = [
   "https://admin.smilejobs.in",
 ];
 
-// Add any custom CLIENT_URL from .env
+// Add custom CLIENT_URL from .env dynamically
 if (process.env.CLIENT_URL) {
   process.env.CLIENT_URL.split(",").forEach((url) => {
     const trimmed = url.trim();
@@ -45,7 +62,7 @@ if (process.env.CLIENT_URL) {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // 1. Allow non-browser requests (Postman, mobile, curl)
+      // 1. Allow non-browser requests (Postman, mobile, servers)
       if (!origin) return callback(null, true);
 
       // 2. Allow explicitly listed origins
@@ -56,9 +73,13 @@ app.use(
         return callback(null, true);
       }
 
-      // Fallback: log warning and permit in development/testing
-      console.warn(`[CORS] Request from unknown origin: ${origin}`);
-      callback(null, true);
+      // Fallback in development
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[CORS Warning] Request from unknown origin allowed in dev: ${origin}`);
+        return callback(null, true);
+      }
+
+      callback(new Error("Not allowed by CORS"));
     },
     credentials: true, // Required for cookies and authorization headers
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -71,11 +92,12 @@ app.use(
       "x-access-token",
     ],
     exposedHeaders: ["Set-Cookie"],
+    maxAge: 86400, // Preflight caching (24 hours) for performance
   })
 );
 
 // ═══ CRITICAL: Webhook routes registered BEFORE express.json() ═══
-// Razorpay webhook signature verification requires raw body
+// Razorpay webhook signature verification requires raw body stream
 app.use("/api/v1/payments", paymentWebhookRoutes);
 
 // ═══ Standard Body & Cookie Parsers ═══
@@ -85,6 +107,8 @@ app.use(cookieParser());
 
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
+} else {
+  app.use(morgan("combined")); // Rich logs for production diagnostics
 }
 
 // ═══ Root & Health Check Routes ═══
@@ -104,11 +128,20 @@ app.get("/api/v1", (req, res) => {
   });
 });
 
+// Production monitoring health check
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = dbState === 1 ? "connected" : "disconnected";
+
+  res.status(dbState === 1 ? 200 : 503).json({
+    status: dbState === 1 ? "ok" : "degraded",
     environment: process.env.NODE_ENV || "development",
     timestamp: new Date().toISOString(),
+    database: dbStatus,
+    memory: {
+      rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+    },
   });
 });
 
