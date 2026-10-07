@@ -5,9 +5,10 @@ const documentSchema = new mongoose.Schema(
     docType: {
       type: String,
       enum: [
-        "company_registration",
+        "shop_act_msme",            // ✅ Added: Matches recruiterModel
         "gst_certificate",
         "pan_card",
+        "company_registration",
         "incorporation_certificate",
         "authorization_letter",
         "address_proof",
@@ -26,6 +27,7 @@ const documentSchema = new mongoose.Schema(
 );
 
 // ✅ Company snapshot at time of submission (immutable historical record)
+// ✅ Updated to include Company Type, TAN, and MSME numbers for auditing
 const companySnapshotSchema = new mongoose.Schema(
   {
     name: { type: String, default: "" },
@@ -34,9 +36,15 @@ const companySnapshotSchema = new mongoose.Schema(
     city: { type: String, default: "" },
     state: { type: String, default: "" },
     country: { type: String, default: "" },
+    
+    // ✅ Added new fields to snapshot
+    companyType: { type: String, default: "" },
     registrationNumber: { type: String, default: "" },
     gstNumber: { type: String, default: "" },
     panNumber: { type: String, default: "" },
+    tanNumber: { type: String, default: "" },
+    msmeNumber: { type: String, default: "" },
+    
     logoUrl: { type: String, default: "" },
     about: { type: String, default: "" },
     contactEmail: { type: String, default: "" },
