@@ -41,6 +41,7 @@ const syncVerificationSnapshot = async (recruiter, verification) => {
     gstNumber: p.gstNumber || "",
     panNumber: p.panNumber || "",
     tanNumber: p.tanNumber || "",
+    msmeNumber: p.msmeNumber || "",
     logoUrl: p.logo?.url || "",
     contactEmail: p.contactEmail || "",
     contactPhone: p.contactPhone || "",
@@ -91,6 +92,7 @@ const buildVerificationView = (recruiter, verification) => ({
     gstNumber: recruiter.companyProfile?.gstNumber || "",
     panNumber: recruiter.companyProfile?.panNumber || "",
     tanNumber: recruiter.companyProfile?.tanNumber || "",
+    msmeNumber: recruiter.companyProfile?.msmeNumber || "",
     logoUrl: recruiter.companyProfile?.logo?.url || "",
     contactEmail: recruiter.companyProfile?.contactEmail || "",
     contactPhone: recruiter.companyProfile?.contactPhone || "",
@@ -446,7 +448,7 @@ class CompanyService {
     return { totalDocuments: verification.documents.length };
   }
 
-  // ✅ UPDATED: Submit verification with new required document types
+  // ✅ UPDATED: Submit verification — accepts PAN OR TAN, requires only 3 documents
   async submitForVerification(recruiterId) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
@@ -471,8 +473,18 @@ class CompanyService {
     if (!p.country || p.country.trim() === "") missingFields.push("Country");
     if (!p.companyType || p.companyType.trim() === "") missingFields.push("Company Type");
     if (!p.gstNumber || p.gstNumber.trim() === "") missingFields.push("GST Number");
-    if (!p.panNumber || p.panNumber.trim() === "") missingFields.push("PAN Number");
-    if (!p.tanNumber || p.tanNumber.trim() === "") missingFields.push("TAN Number");
+
+    // ✅ FIX: Either PAN OR TAN is sufficient (not both)
+    const hasPanOrTan =
+      (p.panNumber && String(p.panNumber).trim() !== "") ||
+      (p.tanNumber && String(p.tanNumber).trim() !== "");
+    if (!hasPanOrTan) missingFields.push("PAN or TAN Number");
+
+    // ✅ MSME / Shop Act Certificate Number required
+    if (!p.msmeNumber || String(p.msmeNumber).trim() === "") {
+      missingFields.push("Shop Act / MSME Number");
+    }
+
     if (!p.logo?.url) missingFields.push("Company Logo");
     if (!p.contactPerson?.name || p.contactPerson.name.trim() === "") {
       missingFields.push("Contact Person Name");
@@ -493,11 +505,11 @@ class CompanyService {
     // Get or create verification and validate documents
     const verification = await getOrCreateVerification(recruiter._id);
     if (verification.documents.length === 0) {
-      throw new ApiError(400, "Please upload at least one verification document");
+      throw new ApiError(400, "Please upload all required verification documents");
     }
 
-    // ✅ UPDATED: New required document types
-    const REQUIRED_DOCS = ["shop_act_msme", "gst_certificate", "pan_card", "tan_card"];
+    // ✅ UPDATED: Only 3 required documents (Shop Act/MSME, GST, PAN or TAN Card)
+    const REQUIRED_DOCS = ["shop_act_msme", "gst_certificate", "pan_card"];
     const uploadedTypes = new Set(verification.documents.map((d) => d.docType));
     const missingDocs = REQUIRED_DOCS.filter((type) => !uploadedTypes.has(type));
 
@@ -505,8 +517,7 @@ class CompanyService {
       const docLabels = {
         shop_act_msme: "Shop Act / MSME Certificate",
         gst_certificate: "GST Certificate",
-        pan_card: "PAN Card",
-        tan_card: "TAN Card",
+        pan_card: "PAN / TAN Card",
       };
       const missingLabels = missingDocs.map((d) => docLabels[d] || d);
       throw new ApiError(
@@ -667,6 +678,7 @@ class CompanyService {
           gstNumber: p.gstNumber || v.companySnapshot?.gstNumber || "",
           panNumber: p.panNumber || v.companySnapshot?.panNumber || "",
           tanNumber: p.tanNumber || v.companySnapshot?.tanNumber || "",
+          msmeNumber: p.msmeNumber || v.companySnapshot?.msmeNumber || "",
           logoUrl: p.logo?.url || v.companySnapshot?.logoUrl || "",
           contactEmail: p.contactEmail || v.companySnapshot?.contactEmail || "",
           contactPhone: p.contactPhone || v.companySnapshot?.contactPhone || "",
