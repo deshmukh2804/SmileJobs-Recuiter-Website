@@ -138,9 +138,8 @@ const recruiterSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    autoIndex: false,
+    autoIndex: true, // ✅ Allows automatic production schema indexing
     minimize: true,
-    // ✅ This is where the schema option belongs to ignore standard path warnings safely.
     suppressReservedKeysWarning: true, 
   }
 );
@@ -238,4 +237,55 @@ recruiterSchema.methods.getLockedField = function () {
 };
 
 const Recruiter = mongoose.model("Recruiter", recruiterSchema);
+
+// ═══════════════════════════════════════════════════════
+// 🚀 AUTO-HEAL ENGINE (Runs inside live production environment)
+// ═══════════════════════════════════════════════════════
+const autoHealDatabase = async () => {
+  try {
+    // Wait for DB connection to be fully ready
+    if (mongoose.connection.readyState !== 1) {
+      await new Promise((resolve) => mongoose.connection.once("connected", resolve));
+    }
+
+    const collection = mongoose.connection.collection("recruiters");
+    console.log("⚙️  Auto-Heal: Verifying indexes and clearing DB legacy conflicts...");
+
+    // 1. Drop bad/legacy non-sparse indexes
+    const badIndexes = ["email_1", "phone_1", "googleId_1"];
+    for (const idxName of badIndexes) {
+      try {
+        await collection.dropIndex(idxName);
+        console.log(`🧹 Auto-Heal: Dropped old index ${idxName}`);
+      } catch (e) {
+        // Index didn't exist or already dropped, ignore safely
+      }
+    }
+
+    // 2. Erase explicit nulls or empty strings preventing sparse uniqueness
+    const fieldsToClean = ["email", "phone", "googleId"];
+    for (const field of fieldsToClean) {
+      const result = await collection.updateMany(
+        { [field]: { $in: [null, ""] } },
+        { $unset: { [field]: "" } }
+      );
+      if (result.modifiedCount > 0) {
+        console.log(`🧹 Auto-Heal: Unset null/empty values on '${field}' field in ${result.modifiedCount} docs`);
+      }
+    }
+
+    // 3. Force rebuild of exact sparse unique indexes
+    await collection.createIndex({ email: 1 }, { unique: true, sparse: true, name: "email_1" });
+    await collection.createIndex({ phone: 1 }, { unique: true, sparse: true, name: "phone_1" });
+    await collection.createIndex({ googleId: 1 }, { unique: true, sparse: true, name: "googleId_1" });
+
+    console.log("✅ Auto-Heal: Sparse unique database verification completed successfully.");
+  } catch (err) {
+    console.error("⚠️ Auto-Heal Engine Warning:", err.message);
+  }
+};
+
+// Fire the self-healing task safely in background on server execution
+autoHealDatabase();
+
 module.exports = Recruiter;
