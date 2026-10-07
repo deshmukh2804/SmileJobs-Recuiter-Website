@@ -36,9 +36,11 @@ const syncVerificationSnapshot = async (recruiter, verification) => {
     city: p.city || "",
     state: p.state || "",
     country: p.country || "",
+    companyType: p.companyType || "",
     registrationNumber: p.registrationNumber || "",
     gstNumber: p.gstNumber || "",
     panNumber: p.panNumber || "",
+    tanNumber: p.tanNumber || "",
     logoUrl: p.logo?.url || "",
     contactEmail: p.contactEmail || "",
     contactPhone: p.contactPhone || "",
@@ -64,7 +66,6 @@ const getOrCreateVerification = async (recruiterId) => {
     });
   }
 
-  // Always sync latest snapshot on read
   await syncVerificationSnapshot(recruiter, v);
   await v.save();
 
@@ -85,9 +86,11 @@ const buildVerificationView = (recruiter, verification) => ({
     city: recruiter.companyProfile?.city || "",
     state: recruiter.companyProfile?.state || "",
     country: recruiter.companyProfile?.country || "",
+    companyType: recruiter.companyProfile?.companyType || "",
     registrationNumber: recruiter.companyProfile?.registrationNumber || "",
     gstNumber: recruiter.companyProfile?.gstNumber || "",
     panNumber: recruiter.companyProfile?.panNumber || "",
+    tanNumber: recruiter.companyProfile?.tanNumber || "",
     logoUrl: recruiter.companyProfile?.logo?.url || "",
     contactEmail: recruiter.companyProfile?.contactEmail || "",
     contactPhone: recruiter.companyProfile?.contactPhone || "",
@@ -443,7 +446,7 @@ class CompanyService {
     return { totalDocuments: verification.documents.length };
   }
 
-  // ✅ CRITICAL FIX: Submit verification with proper validation and detailed error messages
+  // ✅ UPDATED: Submit verification with new required document types
   async submitForVerification(recruiterId) {
     const recruiter = await Recruiter.findById(recruiterId);
     if (!recruiter) throw new ApiError(404, "Recruiter not found");
@@ -466,9 +469,10 @@ class CompanyService {
     if (!p.city || p.city.trim() === "") missingFields.push("City");
     if (!p.state || p.state.trim() === "") missingFields.push("State");
     if (!p.country || p.country.trim() === "") missingFields.push("Country");
-    if (!p.registrationNumber || p.registrationNumber.trim() === "") {
-      missingFields.push("Registration Number");
-    }
+    if (!p.companyType || p.companyType.trim() === "") missingFields.push("Company Type");
+    if (!p.gstNumber || p.gstNumber.trim() === "") missingFields.push("GST Number");
+    if (!p.panNumber || p.panNumber.trim() === "") missingFields.push("PAN Number");
+    if (!p.tanNumber || p.tanNumber.trim() === "") missingFields.push("TAN Number");
     if (!p.logo?.url) missingFields.push("Company Logo");
     if (!p.contactPerson?.name || p.contactPerson.name.trim() === "") {
       missingFields.push("Contact Person Name");
@@ -492,17 +496,19 @@ class CompanyService {
       throw new ApiError(400, "Please upload at least one verification document");
     }
 
-    const REQUIRED_DOCS = ["company_registration", "gst_certificate", "pan_card"];
+    // ✅ UPDATED: New required document types
+    const REQUIRED_DOCS = ["shop_act_msme", "gst_certificate", "pan_card", "tan_card"];
     const uploadedTypes = new Set(verification.documents.map((d) => d.docType));
     const missingDocs = REQUIRED_DOCS.filter((type) => !uploadedTypes.has(type));
 
     if (missingDocs.length > 0) {
       const docLabels = {
-        company_registration: "Company Registration Certificate",
+        shop_act_msme: "Shop Act / MSME Certificate",
         gst_certificate: "GST Certificate",
         pan_card: "PAN Card",
+        tan_card: "TAN Card",
       };
-      const missingLabels = missingDocs.map((d) => docLabels[d]);
+      const missingLabels = missingDocs.map((d) => docLabels[d] || d);
       throw new ApiError(
         400,
         `Please upload all required documents: ${missingLabels.join(", ")}`
@@ -521,7 +527,6 @@ class CompanyService {
     verification.submittedAt = new Date();
     verification.rejectionReason = "";
 
-    // ✅ CRITICAL: Sync full snapshot on submission
     await syncVerificationSnapshot(recruiter, verification);
     await verification.save();
 
@@ -657,9 +662,11 @@ class CompanyService {
           city: p.city || v.companySnapshot?.city || "",
           state: p.state || v.companySnapshot?.state || "",
           country: p.country || v.companySnapshot?.country || "",
+          companyType: p.companyType || v.companySnapshot?.companyType || "",
           registrationNumber: p.registrationNumber || v.companySnapshot?.registrationNumber || "",
           gstNumber: p.gstNumber || v.companySnapshot?.gstNumber || "",
           panNumber: p.panNumber || v.companySnapshot?.panNumber || "",
+          tanNumber: p.tanNumber || v.companySnapshot?.tanNumber || "",
           logoUrl: p.logo?.url || v.companySnapshot?.logoUrl || "",
           contactEmail: p.contactEmail || v.companySnapshot?.contactEmail || "",
           contactPhone: p.contactPhone || v.companySnapshot?.contactPhone || "",

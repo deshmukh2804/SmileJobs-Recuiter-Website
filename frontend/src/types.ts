@@ -167,9 +167,14 @@ export interface CompanyProfile {
   state?: string;
   country?: string;
 
+  // ✅ NEW: Company Type field (replaces CIN)
+  companyType?: string;
+
   registrationNumber?: string;
   gstNumber?: string;
   panNumber?: string;
+  // ✅ NEW: TAN Number field
+  tanNumber?: string;
 
   contactPerson?: { name: string; designation: string };
   contactEmail?: string;
@@ -181,12 +186,16 @@ export interface CompanyProfile {
   establishedYear?: number | string;
 }
 
+// ✅ UPDATED: Document types with new required documents
 export type DocumentType =
-  | 'company_registration'
+  | 'shop_act_msme'
   | 'gst_certificate'
   | 'pan_card'
+  | 'tan_card'
+  | 'company_registration'
   | 'incorporation_certificate'
   | 'authorization_letter'
+  | 'address_proof'
   | 'other';
 
 export type CompanyVerificationStatus =

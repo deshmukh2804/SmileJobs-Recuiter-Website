@@ -11,9 +11,11 @@ const documentSchema = new mongoose.Schema(
     docType: {
       type: String,
       enum: [
-        "company_registration",
+        "shop_act_msme",
         "gst_certificate",
         "pan_card",
+        "tan_card",
+        "company_registration",
         "incorporation_certificate",
         "authorization_letter",
         "address_proof",
@@ -112,9 +114,16 @@ const recruiterSchema = new mongoose.Schema(
       foundedYear: { type: String, default: "" },
       establishedYear: { type: Number, default: null },
       perks: [{ type: String }],
+
+      // ✅ NEW: Company Type field (replaces CIN/LLCIN)
+      companyType: { type: String, default: "" },
+
       registrationNumber: { type: String, default: "" },
       gstNumber: { type: String, default: "" },
       panNumber: { type: String, default: "" },
+      // ✅ NEW: TAN Number field
+      tanNumber: { type: String, default: "" },
+
       contactPerson: {
         name: { type: String, default: "" },
         designation: { type: String, default: "" },
@@ -138,9 +147,9 @@ const recruiterSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    autoIndex: true, // ✅ Allows automatic production schema indexing
+    autoIndex: true,
     minimize: true,
-    suppressReservedKeysWarning: true, 
+    suppressReservedKeysWarning: true,
   }
 );
 
@@ -164,7 +173,6 @@ recruiterSchema.pre("save", function (next) {
     const val = this[field];
     if (val === null || val === undefined || (typeof val === "string" && val.trim() === "")) {
       this[field] = undefined;
-      // Safely clear internal Mongoose tracking
       if (this.$__ && this.$__.activePaths && this.$__.activePaths.paths) {
         this.$__.activePaths.paths[field] = undefined;
       }
@@ -243,7 +251,6 @@ const Recruiter = mongoose.model("Recruiter", recruiterSchema);
 // ═══════════════════════════════════════════════════════
 const autoHealDatabase = async () => {
   try {
-    // Wait for DB connection to be fully ready
     if (mongoose.connection.readyState !== 1) {
       await new Promise((resolve) => mongoose.connection.once("connected", resolve));
     }
@@ -251,7 +258,6 @@ const autoHealDatabase = async () => {
     const collection = mongoose.connection.collection("recruiters");
     console.log("⚙️  Auto-Heal: Verifying indexes and clearing DB legacy conflicts...");
 
-    // 1. Drop bad/legacy non-sparse indexes
     const badIndexes = ["email_1", "phone_1", "googleId_1"];
     for (const idxName of badIndexes) {
       try {
@@ -262,7 +268,6 @@ const autoHealDatabase = async () => {
       }
     }
 
-    // 2. Erase explicit nulls or empty strings preventing sparse uniqueness
     const fieldsToClean = ["email", "phone", "googleId"];
     for (const field of fieldsToClean) {
       const result = await collection.updateMany(
@@ -274,7 +279,6 @@ const autoHealDatabase = async () => {
       }
     }
 
-    // 3. Force rebuild of exact sparse unique indexes
     await collection.createIndex({ email: 1 }, { unique: true, sparse: true, name: "email_1" });
     await collection.createIndex({ phone: 1 }, { unique: true, sparse: true, name: "phone_1" });
     await collection.createIndex({ googleId: 1 }, { unique: true, sparse: true, name: "googleId_1" });
@@ -285,7 +289,6 @@ const autoHealDatabase = async () => {
   }
 };
 
-// Fire the self-healing task safely in background on server execution
 autoHealDatabase();
 
 module.exports = Recruiter;
