@@ -19,14 +19,14 @@ interface MyJobsViewProps {
   onShowToast?: (msg: string) => void;
 }
 
-// ✅ UPDATED: Added "Pending Approval" and "Rejected" statuses
+// ✅ Supported displayed statuses in the Recruiter Frontend
 type JobStatus = 'Live' | 'Draft' | 'Paused' | 'Closed' | 'Pending Approval' | 'Rejected' | 'Expired';
 
 interface BackendJob {
   _id: string;
   title: string;
   companyName: string;
-  companyLogo?: { url?: string; publicId?: string };
+  companyLogo?: string | { url?: string; publicId?: string };
   location?: { address?: string; city?: string; state?: string; country?: string };
   salary?: { min?: number; max?: number; currency?: string; period?: string };
   experience?: { min?: number; max?: number; text?: string };
@@ -66,7 +66,7 @@ interface BackendJob {
   jobDescription?: string;
   qualification?: string;
 
-  // ✅ NEW: Approval tracking fields
+  // ✅ Approval tracking fields mapped from database
   approvalStatus?: 'pending_review' | 'approved' | 'rejected' | 'suspended';
   submittedForReviewAt?: string;
   approvedAt?: string;
@@ -117,7 +117,6 @@ const getInitials = (name?: string): string => {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 };
 
-// ✅ NEW: Get status badge style
 const getStatusBadge = (status: JobStatus) => {
   switch (status) {
     case 'Live':
@@ -153,7 +152,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // ✅ UPDATED: Added "Pending Approval" and "Rejected" to tabs
+  // Active status category tab
   const [activeTab, setActiveTab] = useState<'All' | JobStatus>('All');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -164,7 +163,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
-  // ✅ NEW: Show rejection reason modal
+  // Rejection Reason overlay modal
   const [rejectionModal, setRejectionModal] = useState<{ title: string; reason: string } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -172,6 +171,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     setTimeout(() => setToast(null), 3000);
   };
 
+  // ✅ FETCH & NORMALIZE JOB STATUSES REAL-TIME
   const fetchJobs = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -179,7 +179,31 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     try {
       const res = await jobService.listMyJobs();
       const list = res.data?.jobs || res.data || [];
-      setJobs(Array.isArray(list) ? list : []);
+      
+      const normalized = (Array.isArray(list) ? list : []).map((job: any): BackendJob => {
+        let realStatus: JobStatus = job.status || 'Draft';
+
+        // Core business logic state normalization:
+        if (job.approvalStatus === 'pending_review') {
+          realStatus = 'Pending Approval';
+        } else if (job.approvalStatus === 'rejected') {
+          realStatus = 'Rejected';
+        } else if (job.approvalStatus === 'suspended') {
+          realStatus = 'Paused';
+        } else if (realStatus === 'Pending' || (realStatus as string) === 'Pending Approval') {
+          realStatus = 'Pending Approval';
+        } else if (realStatus === 'Live' && job.approvalStatus !== 'approved') {
+          // A live status is only valid once the administrative approval has been granted
+          realStatus = 'Pending Approval';
+        }
+
+        return {
+          ...job,
+          status: realStatus,
+        };
+      });
+
+      setJobs(normalized);
     } catch (err: any) {
       setApiError(err.response?.data?.message || err.message || 'Failed to load jobs');
       setJobs([]);
@@ -189,7 +213,9 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     }
   }, []);
 
-  useEffect(() => { fetchJobs(); }, [fetchJobs]);
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
 
   const prepareJobPayload = (job: BackendJob, updates: Partial<BackendJob>) => {
     const merged = { ...job, ...updates };
@@ -269,7 +295,6 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     });
   }, [jobs, activeTab, searchQuery, workModeFilter, jobTypeFilter]);
 
-  // ✅ UPDATED: Added pendingApproval and rejected counters
   const counts = useMemo(() => ({
     total: jobs.length,
     live: jobs.filter(j => j.status === 'Live').length,
@@ -286,7 +311,13 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     setActionLoading(jobId);
     try {
       await jobService.updateStatus(jobId, newStatus);
-      setJobs(prev => prev.map(j => j._id === jobId ? { ...j, status: newStatus, isActive: false } : j));
+      setJobs(prev => prev.map(j => {
+        if (j._id === jobId) {
+          // When taking administrative offline steps, status update resets approval mapping states locally
+          return { ...j, status: newStatus, approvalStatus: newStatus === 'Draft' ? undefined : j.approvalStatus, isActive: false };
+        }
+        return j;
+      }));
       const msgs: Record<string, string> = {
         Paused: 'Job paused',
         Closed: 'Job closed',
@@ -315,16 +346,14 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
     }
   };
 
-  // ✅ UPDATED: Only Live jobs can be paused (admin controls approval)
   const handleToggleStatus = async (job: BackendJob) => {
     if (job.status === 'Live') {
       await handleStatusChange(job._id, 'Paused');
     } else if (job.status === 'Paused') {
-      // Resuming paused → stays as Paused in UI, admin needs to re-approve? Actually we allow Live
       setActionLoading(job._id);
       try {
         await jobService.updateStatus(job._id, 'Draft');
-        setJobs(prev => prev.map(j => j._id === job._id ? { ...j, status: 'Draft', isActive: false } : j));
+        setJobs(prev => prev.map(j => j._id === job._id ? { ...j, status: 'Draft', approvalStatus: undefined, isActive: false } : j));
         showToast('Job moved to draft. Edit and submit for approval to make it live.', 'success');
       } catch (err: any) {
         showToast(err.response?.data?.message || 'Failed to update status', 'error');
@@ -367,7 +396,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
 
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-6 bg-[#FAFAFA] min-h-screen">
-      {/* ─── Toast ─── */}
+      {/* ─── Toast Alerts ─── */}
       {toast && (
         <div
           className={`fixed top-20 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-2 text-sm font-semibold animate-in slide-in-from-right duration-200 ${
@@ -381,7 +410,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       )}
 
-      {/* ✅ NEW: Rejection Reason Modal */}
+      {/* ─── Rejection Reason Modal ─── */}
       {rejectionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setRejectionModal(null)}>
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-200 p-6 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
@@ -413,7 +442,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       )}
 
-      {/* ─── Delete Modal ─── */}
+      {/* ─── Delete Confirmation Modal ─── */}
       {confirmDeleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-200 p-6 animate-in zoom-in-95 duration-200">
@@ -453,7 +482,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       )}
 
-      {/* ─── Error Banner ─── */}
+      {/* ─── Error Notification Banner ─── */}
       {apiError && (
         <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-sm flex items-center gap-2">
           <AlertTriangle className="w-5 h-5" />
@@ -464,7 +493,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       )}
 
-      {/* ─── Header ─── */}
+      {/* ─── Header Section ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -499,7 +528,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       </div>
 
-      {/* ✅ NEW: Important Notice About Approval Workflow */}
+      {/* ─── Approval Workflow Explainer ─── */}
       {counts.pendingApproval > 0 && (
         <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
@@ -508,13 +537,13 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
           <div className="flex-1">
             <h3 className="text-sm font-bold text-blue-900">Admin Review in Progress</h3>
             <p className="text-xs text-blue-700 mt-0.5">
-              You have <strong>{counts.pendingApproval} job{counts.pendingApproval !== 1 ? 's' : ''}</strong> awaiting admin approval. Jobs usually get reviewed within 24-48 hours. Once approved, they'll be visible to candidates automatically.
+              You have <strong>{counts.pendingApproval} job{counts.pendingApproval !== 1 ? 's' : ''}</strong> awaiting admin approval. Jobs usually get reviewed within 24-48 hours. Once approved, they will be visible to candidates automatically.
             </p>
           </div>
         </div>
       )}
 
-      {/* ✅ UPDATED: KPI Cards — Added Pending Approval & Rejected */}
+      {/* ─── KPI Metrics Grid ─── */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {[
           { label: 'Total', value: counts.total, icon: Briefcase, filter: 'All' as const, color: 'text-gray-500' },
@@ -549,7 +578,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         ))}
       </div>
 
-      {/* ✅ UPDATED: Tabs — Added Pending Approval & Rejected */}
+      {/* ─── Tabs Navigation Row ─── */}
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
         {[
           { key: 'All' as const, label: 'All Jobs', count: counts.total },
@@ -587,7 +616,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         ))}
       </div>
 
-      {/* ─── Filter Toolbar ─── */}
+      {/* ─── Search and Filters Toolbar ─── */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
           <div className="relative flex-1">
@@ -641,7 +670,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       </div>
 
-      {/* ─── Job List ─── */}
+      {/* ─── Jobs Render Area ─── */}
       {loading && filteredJobs.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 bg-white rounded-2xl border border-gray-200 shadow-sm">
           <Loader2 className="w-8 h-8 text-[#42326E] animate-spin mb-4" />
@@ -666,7 +695,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          {/* List Header (Desktop) */}
+          {/* List Header (Desktop View) */}
           <div className="hidden md:grid md:grid-cols-12 gap-4 px-6 py-4 bg-gray-50/80 border-b border-gray-200 text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
             <div className="col-span-4">Job Details</div>
             <div className="col-span-2">Location & Mode</div>
@@ -692,10 +721,21 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     job.featured ? 'bg-amber-50/20' : ''
                   } ${isRejected ? 'bg-rose-50/30' : ''} ${isPending ? 'bg-amber-50/20' : ''}`}
                 >
-                  {/* Col 1: Job Details */}
+                  {/* Col 1: Job Info Details & Branding */}
                   <div className="col-span-1 md:col-span-4 flex items-start gap-3 min-w-0">
                     <div className="w-12 h-12 rounded-xl bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-sm shadow-sm shrink-0 overflow-hidden">
-                      {job.companyLogo?.url ? (
+                      {typeof job.companyLogo === 'string' && job.companyLogo ? (
+                        <img
+                          src={job.companyLogo}
+                          alt={job.companyName}
+                          className="w-full h-full object-cover"
+                          onError={e => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const p = (e.target as HTMLImageElement).parentElement;
+                            if (p) p.textContent = getInitials(job.companyName);
+                          }}
+                        />
+                      ) : typeof job.companyLogo === 'object' && job.companyLogo?.url ? (
                         <img
                           src={job.companyLogo.url}
                           alt={job.companyName}
@@ -740,9 +780,9 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                         <span className="font-mono text-[9px] text-gray-400">#{job._id.slice(-6)}</span>
                       </div>
 
-                      {/* ✅ NEW: Pending Review indicator */}
+                      {/* Pending status tag */}
                       {isPending && (
-                        <div className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-amber-100 border border-amber-200 rounded-lg">
+                        <div className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-amber-100 border border-amber-200 rounded-lg max-w-max">
                           <Clock className="w-3 h-3 text-amber-700" />
                           <span className="text-[10px] text-amber-800 font-bold">
                             {job.lastEditedAfterApproval ? 'Edited — Awaiting re-approval' : 'Awaiting admin approval'}
@@ -750,7 +790,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                         </div>
                       )}
 
-                      {/* ✅ NEW: Rejection reason button */}
+                      {/* Rejection reasons action */}
                       {isRejected && (
                         <button
                           onClick={() => setRejectionModal({ title: job.title, reason: job.rejectionReason || '' })}
@@ -784,7 +824,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Col 2: Location */}
+                  {/* Col 2: Geographical Info & Work Arrangements */}
                   <div className="col-span-1 md:col-span-2 text-xs text-gray-700">
                     <div className="flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
@@ -796,7 +836,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Col 3: Salary */}
+                  {/* Col 3: Salary Structures & Timestamps */}
                   <div className="col-span-1 md:col-span-2">
                     <div className="text-sm font-extrabold text-[#2C1B57] font-mono tracking-tight">
                       {formatSalary(job.salary?.min, job.salary?.max, job.salary?.currency, job.salary?.period)}
@@ -806,12 +846,12 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Col 4: Applicants */}
+                  {/* Col 4: Applicant Metrics */}
                   <div className="col-span-1 md:col-span-1 text-center">
                     <button
                       onClick={() => onViewApplicants?.(job._id, job.title)}
                       disabled={!job.applicantsCount}
-                      className="text-[15px] font-extrabold text-[#42326E] hover:text-[#2C1B57] hover:underline disabled:text-gray-400 disabled:no-underline"
+                      className="text-[15px] font-extrabold text-[#42326E] hover:text-[#2C1B57] hover:underline disabled:text-gray-400 disabled:no-underline font-mono"
                     >
                       {job.applicantsCount || 0}
                       <span className="text-gray-400 font-medium text-[10px]">/{job.applicantsCap || 100}</span>
@@ -826,7 +866,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* ✅ UPDATED Col 5: Status Badge */}
+                  {/* Col 5: Verified Status Badge */}
                   <div className="col-span-1 md:col-span-1 text-center">
                     <span
                       className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[9px] font-extrabold whitespace-nowrap border ${statusBadge.bg} ${statusBadge.text} ${statusBadge.border}`}
@@ -836,7 +876,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     </span>
                   </div>
 
-                  {/* ✅ UPDATED Col 6: Actions — context-aware */}
+                  {/* Col 6: Dynamic Interactive Controls */}
                   <div className="col-span-1 md:col-span-2 flex items-center justify-end gap-1.5">
                     <button
                       onClick={() => handleViewJob(job._id)}
@@ -848,13 +888,13 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                     <button
                       onClick={() => handleEditJob(job._id)}
                       className="px-3 py-2 rounded-lg bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] text-xs font-bold flex items-center gap-1.5 hover:bg-[#42326E] hover:text-white transition-all shadow-sm"
-                      title={isRejected ? 'Edit & resubmit' : 'Edit Job'}
+                      title={isRejected ? 'Edit & Resubmit' : 'Edit Job'}
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                       <span className="hidden lg:inline">{isRejected ? 'Fix & Resubmit' : 'Edit'}</span>
                     </button>
 
-                    {/* Feature button only for Live jobs */}
+                    {/* Feature button restricted to live active listings only */}
                     {job.status === 'Live' && (
                       <button
                         onClick={() => handleToggleFeature(job)}
@@ -868,7 +908,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
                       </button>
                     )}
 
-                    {/* Pause/Resume button only for Live or Paused jobs */}
+                    {/* Operational controls for Live or Paused entries */}
                     {isLiveOrPaused && (
                       <button
                         onClick={() => handleToggleStatus(job)}
@@ -901,7 +941,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
         </div>
       )}
 
-      {/* ─── Footer ─── */}
+      {/* ─── Footer Controls & Metadata Counts ─── */}
       {filteredJobs.length > 0 && (
         <div className="bg-white p-4 rounded-2xl border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500 shadow-sm">
           <div>
@@ -923,7 +963,7 @@ export const MyJobsView: React.FC<MyJobsViewProps> = ({
             </span>
             <span className="flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-[#42326E]" />
-              <strong className="text-[#2C1B57]">{counts.totalApplicants}</strong> Applicants
+              <strong className="text-[#2C1B57] font-mono">{counts.totalApplicants}</strong> Applicants
             </span>
           </div>
         </div>
