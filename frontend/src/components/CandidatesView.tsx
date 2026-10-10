@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Candidate, CandidateFullDetails } from '../types';
 import { candidateService } from '../services/candidateService';
+import { jobService } from '../services/jobService';
 import {
   Search,
   ShieldCheck,
@@ -24,6 +25,7 @@ import {
   Copy,
   Trash2,
   ArrowRight,
+  ArrowLeft,
   Clock,
   AlertCircle,
   ChevronDown,
@@ -32,6 +34,8 @@ import {
   Package,
   Sparkles,
   MessageSquare,
+  Building2,
+  RotateCcw,
 } from 'lucide-react';
 
 interface CandidatesViewProps {
@@ -69,15 +73,73 @@ const STATUS_COLOR_MAP: Record<string, string> = {
 
 const shortId = (id?: string) => (id ? id.slice(-8).toUpperCase() : '—');
 
+// ═══════════════════════════════════════════════════════
+// JOB TYPE (lightweight, from backend)
+// ═══════════════════════════════════════════════════════
+interface JobItem {
+  _id: string;
+  title: string;
+  companyName?: string;
+  companyLogo?: string | { url?: string };
+  location?: { city?: string; state?: string; country?: string };
+  jobType?: string;
+  workMode?: string;
+  status?: string;
+  applicantsCount?: number;
+  applicantsCap?: number;
+  featured?: boolean;
+  createdAt?: string;
+  postedAt?: string;
+}
+
+const getInitials = (name: string) =>
+  (name || 'C C')
+    .split(' ')
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+const formatLocation = (loc: any): string => {
+  if (!loc) return 'Remote';
+  if (typeof loc === 'string') return loc;
+  if (typeof loc === 'object') {
+    const parts = [loc.city, loc.state, loc.country].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : 'Remote';
+  }
+  return 'Remote';
+};
+
+const getLogoUrl = (logo: any): string | null => {
+  if (!logo) return null;
+  if (typeof logo === 'string') return logo;
+  if (typeof logo === 'object' && logo.url) return logo.url;
+  return null;
+};
+
 export const CandidatesView: React.FC<CandidatesViewProps> = ({
   candidates,
   onBookmarkToggle,
 }) => {
+  // ═══════════════════════════════════════════════════════
+  // STATE — JOBS (Column 1)
+  // ═══════════════════════════════════════════════════════
+  const [jobs, setJobs] = useState<JobItem[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+  const [jobSearch, setJobSearch] = useState('');
+  const [selectedJob, setSelectedJob] = useState<JobItem | null>(null);
+
+  // ═══════════════════════════════════════════════════════
+  // STATE — APPLICATIONS (Column 2) — derived from candidates prop
+  // ═══════════════════════════════════════════════════════
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('match');
 
-  // Detail Panel State
+  // ═══════════════════════════════════════════════════════
+  // STATE — DETAIL PANEL (Column 3)
+  // ═══════════════════════════════════════════════════════
   const [selectedApp, setSelectedApp] = useState<CandidateFullDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [showResumeModal, setShowResumeModal] = useState(false);
@@ -97,6 +159,12 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
   // Avatar error tracking
   const [avatarErrors, setAvatarErrors] = useState<Set<string>>(new Set());
 
+  // Flickering-fix ref pattern
+  const selectedAppIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedAppIdRef.current = selectedApp?._id || null;
+  }, [selectedApp]);
+
   const handleAvatarError = (id: string) => {
     setAvatarErrors((prev) => new Set(prev).add(id));
   };
@@ -107,7 +175,61 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
   };
 
   // ═══════════════════════════════════════════════════════
-  // FILTERS
+  // FETCH JOBS (Recruiter's own jobs via jobService.listMyJobs)
+  // ═══════════════════════════════════════════════════════
+  const fetchJobs = useCallback(async () => {
+    setJobsLoading(true);
+    setJobsError(null);
+    try {
+      const res = await jobService.listMyJobs();
+      const list = res?.data?.jobs || res?.data || [];
+      const arr = Array.isArray(list) ? list : [];
+      setJobs(arr);
+    } catch (err: any) {
+      setJobsError(err?.response?.data?.message || err?.message || 'Failed to load jobs');
+      setJobs([]);
+    } finally {
+      setJobsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
+
+  // ═══════════════════════════════════════════════════════
+  // FILTER JOBS by search
+  // ═══════════════════════════════════════════════════════
+  const filteredJobs = useMemo(() => {
+    const q = jobSearch.trim().toLowerCase();
+    if (!q) return jobs;
+    return jobs.filter((j) =>
+      (j.title || '').toLowerCase().includes(q) ||
+      (j.companyName || '').toLowerCase().includes(q) ||
+      (j.location?.city || '').toLowerCase().includes(q) ||
+      (j._id || '').toLowerCase().includes(q)
+    );
+  }, [jobs, jobSearch]);
+
+  // ═══════════════════════════════════════════════════════
+  // JOB-FILTERED CANDIDATES — only candidates applied to the selected job
+  // ═══════════════════════════════════════════════════════
+  const jobFilteredCandidates = useMemo(() => {
+    if (!selectedJob) return [];
+    const jobId = selectedJob._id;
+    return candidates.filter((c: any) => {
+      const candJobId =
+        c.jobId ||
+        c.job?._id ||
+        c.job_id ||
+        c.jobID ||
+        (typeof c.job === 'string' ? c.job : null);
+      return String(candJobId || '') === String(jobId);
+    });
+  }, [candidates, selectedJob]);
+
+  // ═══════════════════════════════════════════════════════
+  // STATUS FILTERS (same as before, now within selected job scope)
   // ═══════════════════════════════════════════════════════
   const filters = [
     { id: 'all', label: 'All' },
@@ -122,7 +244,7 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
   ];
 
   const filteredCandidates = useMemo(() => {
-    let result = candidates.filter((c) => {
+    let result = jobFilteredCandidates.filter((c) => {
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         c.name.toLowerCase().includes(q) ||
@@ -148,20 +270,39 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
     });
 
     return result;
-  }, [candidates, searchQuery, selectedFilter, sortBy]);
+  }, [jobFilteredCandidates, searchQuery, selectedFilter, sortBy]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: candidates.length, bookmarked: 0 };
-    candidates.forEach((c) => {
+    const counts: Record<string, number> = { all: jobFilteredCandidates.length, bookmarked: 0 };
+    jobFilteredCandidates.forEach((c) => {
       const status = (c as any).status || c.stage;
       counts[status] = (counts[status] || 0) + 1;
       if (c.bookmarked) counts.bookmarked = (counts.bookmarked || 0) + 1;
     });
     return counts;
-  }, [candidates]);
+  }, [jobFilteredCandidates]);
 
   // ═══════════════════════════════════════════════════════
-  // HANDLERS
+  // HANDLERS — JOB SELECTION
+  // ═══════════════════════════════════════════════════════
+  const handleSelectJob = (job: JobItem) => {
+    setSelectedJob(job);
+    setSelectedApp(null);
+    setShowMobileDetail(false);
+    setSelectedIds([]);
+    setSearchQuery('');
+    setSelectedFilter('all');
+  };
+
+  const handleBackToJobs = () => {
+    setSelectedJob(null);
+    setSelectedApp(null);
+    setShowMobileDetail(false);
+    setSelectedIds([]);
+  };
+
+  // ═══════════════════════════════════════════════════════
+  // HANDLERS — CANDIDATE DETAIL (same as original)
   // ═══════════════════════════════════════════════════════
   const handleSelectCandidate = async (candidate: Candidate) => {
     setLoadingDetails(true);
@@ -264,246 +405,461 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
 
   const isTerminalStatus = selectedApp && TERMINAL_STAGES.includes(selectedApp.status);
 
-  const getInitials = (name: string) =>
-    name
-      .split(' ')
-      .map((p) => p[0])
-      .join('')
-      .slice(0, 2)
-      .toUpperCase();
+  // ═══════════════════════════════════════════════════════
+  // JOB CARD counts helper (apps per job from candidates prop)
+  // ═══════════════════════════════════════════════════════
+  const getJobAppCount = useCallback((jobId: string) => {
+    return candidates.filter((c: any) => {
+      const candJobId =
+        c.jobId ||
+        c.job?._id ||
+        c.job_id ||
+        c.jobID ||
+        (typeof c.job === 'string' ? c.job : null);
+      return String(candJobId || '') === String(jobId);
+    }).length;
+  }, [candidates]);
 
+  // ═══════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-4 animate-in fade-in duration-200">
-      {/* HEADER */}
+      {/* ═══════ HEADER ═══════ */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-[#2C1B57] flex items-center gap-2">
             <Users className="w-6 h-6 text-[#B29CFE]" />
             Candidates
-            <span className="text-xs font-normal text-[#6F687A]">({candidates.length})</span>
+            <span className="text-xs font-normal text-[#6F687A]">
+              ({selectedJob ? jobFilteredCandidates.length : candidates.length})
+            </span>
           </h1>
           <p className="text-xs text-[#6F687A] mt-0.5">
-            Manage applications, view resumes, and track hiring pipeline
+            {selectedJob
+              ? `Showing applications for "${selectedJob.title}"`
+              : 'Select a job to view its applications and candidates'}
           </p>
         </div>
-      </div>
 
-      {/* FILTER CHIPS */}
-      <div className="flex flex-wrap gap-1.5">
-        {filters.map((f) => (
+        {selectedJob && (
           <button
-            key={f.id}
-            onClick={() => setSelectedFilter(f.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-              selectedFilter === f.id
-                ? 'bg-[#2C1B57] text-white border-[#2C1B57] shadow-xs'
-                : 'bg-white text-[#49454F] border-[#E8E3EF] hover:border-[#B29CFE]'
-            }`}
+            onClick={handleBackToJobs}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E8E3EF] bg-white text-xs font-bold text-[#42326E] hover:bg-[#F8F5FF] transition-colors"
           >
-            {f.label} <span className="opacity-70 ml-0.5">({statusCounts[f.id] || 0})</span>
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back to Jobs
           </button>
-        ))}
-      </div>
-
-      {/* SEARCH & BULK */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-[220px] max-w-2xl">
-          <Search className="w-4 h-4 text-[#6F687A] absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, email, skills, or job title..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#E8E3EF] bg-white text-xs focus:outline-none focus:border-[#42326E] focus:ring-2 focus:ring-[#EDE6FA]"
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label className="text-[11px] font-bold text-[#49454F]">Sort:</label>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="bg-white border border-[#E8E3EF] rounded-lg px-2.5 py-1.5 text-xs text-[#2C1B57] font-semibold focus:outline-none focus:border-[#42326E]"
-          >
-            <option value="match">Match Score</option>
-            <option value="recent">Most Recent</option>
-            <option value="experience">Experience</option>
-            <option value="name">Name (A-Z)</option>
-          </select>
-        </div>
-
-        {selectedIds.length > 0 && (
-          <div className="flex items-center gap-1.5 bg-[#EDE6FA] border border-[#B29CFE] rounded-xl px-2.5 py-1.5">
-            <span className="text-xs font-bold text-[#42326E]">{selectedIds.length} selected</span>
-            <div className="relative">
-              <button
-                onClick={() => setShowBulkMenu(!showBulkMenu)}
-                className="text-xs font-bold text-[#42326E] hover:underline flex items-center gap-1"
-              >
-                Bulk Action <ChevronDown className="w-3 h-3" />
-              </button>
-              {showBulkMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E3EF] rounded-xl shadow-lg z-20 min-w-[180px] py-1">
-                  {['Shortlisted', 'Interview', 'Rejected', 'Withdrawn'].map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => handleBulkStatusChange(s)}
-                      className="w-full text-left px-3 py-2 text-xs font-semibold text-[#2C1B57] hover:bg-[#F8F5FF]"
-                    >
-                      Move to {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <button
-              onClick={() => setSelectedIds([])}
-              className="text-[10px] text-[#6F687A] hover:text-rose-600 px-1"
-            >
-              Clear
-            </button>
-          </div>
         )}
       </div>
 
-      {/* SPLIT LAYOUT */}
+      {/* ═══════ 3-COLUMN LAYOUT ═══════ */}
       <div
         className={`grid gap-4 ${
-          selectedApp || showMobileDetail
-            ? 'grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)]'
+          selectedJob && (selectedApp || showMobileDetail)
+            ? 'grid-cols-1 xl:grid-cols-[280px_340px_minmax(0,1fr)]'
+            : selectedJob
+            ? 'grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)]'
             : 'grid-cols-1'
         }`}
       >
-        {/* LEFT: LIST */}
+        {/* ═════════════════════════════════════════════════════ */}
+        {/* COLUMN 1: JOBS LIST                                  */}
+        {/* ═════════════════════════════════════════════════════ */}
         <div
           className={`space-y-2 ${
-            selectedApp && showMobileDetail ? 'hidden xl:block' : 'block'
+            selectedJob && showMobileDetail ? 'hidden xl:block' : 'block'
           }`}
         >
-          {filteredCandidates.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-2xl border border-[#E8E3EF]">
-              <Users className="w-12 h-12 text-[#B29CFE] mx-auto mb-2 opacity-50" />
-              <p className="text-sm font-bold text-[#2C1B57]">No candidates found</p>
-              <p className="text-xs text-[#6F687A] mt-1">Try adjusting filters or search</p>
+          <div className="bg-white rounded-2xl border border-[#E8E3EF] p-3 sticky top-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-extrabold text-[#2C1B57] flex items-center gap-1.5 uppercase tracking-wider">
+                <Briefcase className="w-3.5 h-3.5 text-[#42326E]" />
+                My Jobs ({jobs.length})
+              </h2>
+              <button
+                onClick={fetchJobs}
+                disabled={jobsLoading}
+                className="p-1 rounded-lg hover:bg-[#F8F5FF] text-[#6F687A] hover:text-[#42326E] transition-colors disabled:opacity-50"
+                title="Refresh"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${jobsLoading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
-          ) : (
-            <>
-              <label className="flex items-center gap-2 px-2 py-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={
-                    selectedIds.length === filteredCandidates.length &&
-                    filteredCandidates.length > 0
-                  }
-                  onChange={toggleSelectAll}
-                  className="w-3.5 h-3.5 rounded accent-[#42326E] cursor-pointer"
-                />
-                <span className="text-[10px] text-[#6F687A] font-semibold">
-                  Select all ({filteredCandidates.length})
-                </span>
-              </label>
 
-              {filteredCandidates.map((cand) => {
-                const status = (cand as any).status || cand.stage;
-                const isSelected = selectedApp?._id === cand.id;
-                const avatarUrl = (cand as any).avatarUrl;
-                const showAvatarImage = avatarUrl && !avatarErrors.has(cand.id);
+            {/* Job Search */}
+            <div className="relative mb-3">
+              <Search className="w-3.5 h-3.5 text-[#6F687A] absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={jobSearch}
+                onChange={(e) => setJobSearch(e.target.value)}
+                placeholder="Search jobs..."
+                className="w-full pl-8 pr-2 py-1.5 rounded-lg border border-[#E8E3EF] bg-[#FCFCF7] text-[11px] focus:outline-none focus:border-[#42326E]"
+              />
+            </div>
 
-                return (
-                  <div
-                    key={cand.id}
-                    onClick={() => handleSelectCandidate(cand)}
-                    className={`bg-white rounded-2xl border p-3 cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-[#42326E] shadow-md ring-2 ring-[#EDE6FA]'
-                        : 'border-[#E8E3EF] hover:border-[#B29CFE] hover:shadow-sm'
-                    }`}
+            {/* Jobs Scrollable List */}
+            <div className="space-y-1.5 max-h-[calc(100vh-260px)] overflow-y-auto pr-1">
+              {jobsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#42326E]" />
+                </div>
+              ) : jobsError ? (
+                <div className="text-center py-8">
+                  <AlertCircle className="w-6 h-6 text-rose-500 mx-auto mb-1" />
+                  <p className="text-[10px] text-rose-600 font-bold">{jobsError}</p>
+                  <button
+                    onClick={fetchJobs}
+                    className="mt-2 text-[10px] text-[#42326E] font-bold underline"
                   >
-                    <div className="flex items-start gap-2.5">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(cand.id)}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          toggleSelect(cand.id);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-1 w-3.5 h-3.5 rounded accent-[#42326E] cursor-pointer shrink-0"
-                      />
+                    Retry
+                  </button>
+                </div>
+              ) : filteredJobs.length === 0 ? (
+                <div className="text-center py-8">
+                  <Briefcase className="w-8 h-8 text-[#B29CFE] mx-auto mb-1 opacity-50" />
+                  <p className="text-[10px] text-[#6F687A] font-semibold">
+                    {jobSearch ? 'No jobs match search' : 'No jobs posted yet'}
+                  </p>
+                </div>
+              ) : (
+                filteredJobs.map((job) => {
+                  const appCount = getJobAppCount(job._id);
+                  const isSelected = selectedJob?._id === job._id;
+                  const logo = getLogoUrl(job.companyLogo);
+                  const statusLower = (job.status || '').toLowerCase();
 
-                      {showAvatarImage ? (
-                        <img
-                          src={avatarUrl}
-                          alt={cand.name}
-                          className="w-10 h-10 rounded-xl object-cover border border-[#E8E3EF] shrink-0"
-                          onError={() => handleAvatarError(cand.id)}
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-xs shrink-0"
-                          style={{ backgroundColor: cand.avatarBg }}
-                        >
-                          {getInitials(cand.name)}
-                        </div>
-                      )}
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-bold text-xs text-[#2C1B57] truncate leading-tight flex items-center gap-1">
-                              {cand.name}
-                              <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
-                            </h3>
-                            <p className="text-[11px] text-[#6F687A] truncate leading-tight mt-0.5">
-                              {cand.role}
-                            </p>
+                  return (
+                    <button
+                      key={job._id}
+                      onClick={() => handleSelectJob(job)}
+                      className={`w-full text-left bg-white rounded-xl border p-2.5 transition-all ${
+                        isSelected
+                          ? 'border-[#42326E] shadow-md ring-2 ring-[#EDE6FA]'
+                          : 'border-[#E8E3EF] hover:border-[#B29CFE] hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {logo ? (
+                          <img
+                            src={logo}
+                            alt=""
+                            className="w-8 h-8 rounded-lg object-cover border border-[#E8E3EF] shrink-0"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-[#F8F5FF] border border-[#D7C8ED] text-[#42326E] flex items-center justify-center font-bold text-[10px] shrink-0">
+                            {getInitials(job.companyName || job.title)}
                           </div>
-                          <span className={`text-sm font-extrabold shrink-0 ${matchColor(cand.matchScore)}`}>
-                            {cand.matchScore}%
-                          </span>
-                        </div>
+                        )}
 
-                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold border ${STATUS_COLOR_MAP[status] || STATUS_COLOR_MAP.Applied}`}
-                          >
-                            {status}
-                          </span>
-                          {cand.location && (
-                            <span className="text-[9px] text-[#6F687A] flex items-center gap-0.5">
-                              <MapPin className="w-2.5 h-2.5" />
-                              {cand.location.split(',')[0]}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-1">
+                            <h3 className="text-[11px] font-bold text-[#2C1B57] leading-tight truncate flex items-center gap-1">
+                              {job.title}
+                              {job.featured && (
+                                <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-400 shrink-0" />
+                              )}
+                            </h3>
+                          </div>
+                          <p className="text-[10px] text-[#6F687A] truncate mt-0.5">
+                            {job.companyName || '—'}
+                          </p>
+
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-bold border ${
+                                statusLower === 'live'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : statusLower === 'draft'
+                                  ? 'bg-slate-50 text-slate-700 border-slate-200'
+                                  : statusLower === 'paused'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : statusLower === 'pending approval'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : statusLower === 'rejected'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-gray-50 text-gray-600 border-gray-200'
+                              }`}
+                            >
+                              {job.status || 'Draft'}
                             </span>
-                          )}
-                          {cand.bookmarked && (
-                            <span className="text-[9px] text-amber-600">⭐</span>
-                          )}
+                            {job.location?.city && (
+                              <span className="text-[9px] text-[#6F687A] flex items-center gap-0.5">
+                                <MapPin className="w-2.5 h-2.5" />
+                                {job.location.city}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-[#F0ECF5]">
+                            <span className="text-[9px] text-[#6F687A] font-mono">
+                              #{job._id.slice(-6)}
+                            </span>
+                            <span
+                              className={`text-[10px] font-extrabold ${
+                                appCount > 0 ? 'text-[#42326E]' : 'text-[#9C94A7]'
+                              }`}
+                            >
+                              {appCount} apps
+                            </span>
+                          </div>
                         </div>
-
-                        <p className="text-[10px] text-[#6F687A] mt-1 truncate">
-                          → <strong className="text-[#42326E]">{cand.jobTitle || 'Job Application'}</strong>
-                        </p>
                       </div>
-
-                      <button
-                        onClick={(e) => handleBookmark(cand.id, e)}
-                        className={`p-1 rounded-lg transition-colors shrink-0 ${
-                          cand.bookmarked ? 'text-amber-500' : 'text-[#6F687A] hover:text-amber-500'
-                        }`}
-                      >
-                        <Bookmark className={`w-3.5 h-3.5 ${cand.bookmarked ? 'fill-current' : ''}`} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </>
-          )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* RIGHT: DETAIL PANEL */}
-        {(selectedApp || loadingDetails) && (
+        {/* ═════════════════════════════════════════════════════ */}
+        {/* COLUMN 2: APPLICATIONS LIST (only when job selected)  */}
+        {/* ═════════════════════════════════════════════════════ */}
+        {selectedJob && (
+          <div
+            className={`space-y-2 ${
+              selectedApp && showMobileDetail ? 'hidden xl:block' : 'block'
+            }`}
+          >
+            {/* Selected Job Header */}
+            <div className="bg-gradient-to-br from-[#F8F5FF] to-white border border-[#EDE6FA] rounded-2xl p-3">
+              <div className="flex items-start gap-2">
+                <Building2 className="w-4 h-4 text-[#42326E] shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-xs font-extrabold text-[#2C1B57] truncate">
+                    {selectedJob.title}
+                  </h3>
+                  <p className="text-[10px] text-[#6F687A] truncate">
+                    {selectedJob.companyName} • {formatLocation(selectedJob.location)}
+                  </p>
+                  <p className="text-[9px] text-[#9C94A7] mt-0.5 font-mono">
+                    ID: {shortId(selectedJob._id)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter chips */}
+            <div className="flex flex-wrap gap-1">
+              {filters.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setSelectedFilter(f.id)}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                    selectedFilter === f.id
+                      ? 'bg-[#2C1B57] text-white border-[#2C1B57] shadow-xs'
+                      : 'bg-white text-[#49454F] border-[#E8E3EF] hover:border-[#B29CFE]'
+                  }`}
+                >
+                  {f.label}
+                  <span className="opacity-70 ml-0.5">({statusCounts[f.id] || 0})</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Search + Sort */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="w-3.5 h-3.5 text-[#6F687A] absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search candidates..."
+                  className="w-full pl-8 pr-2 py-1.5 rounded-lg border border-[#E8E3EF] bg-white text-[11px] focus:outline-none focus:border-[#42326E]"
+                />
+              </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="bg-white border border-[#E8E3EF] rounded-lg px-2 py-1.5 text-[11px] text-[#2C1B57] font-semibold focus:outline-none focus:border-[#42326E]"
+              >
+                <option value="match">Match</option>
+                <option value="recent">Recent</option>
+                <option value="experience">Exp</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+
+            {/* Bulk actions bar */}
+            {selectedIds.length > 0 && (
+              <div className="flex items-center gap-1.5 bg-[#EDE6FA] border border-[#B29CFE] rounded-xl px-2 py-1.5">
+                <span className="text-[10px] font-bold text-[#42326E]">
+                  {selectedIds.length} sel
+                </span>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowBulkMenu(!showBulkMenu)}
+                    className="text-[10px] font-bold text-[#42326E] hover:underline flex items-center gap-0.5"
+                  >
+                    Action <ChevronDown className="w-2.5 h-2.5" />
+                  </button>
+                  {showBulkMenu && (
+                    <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E3EF] rounded-xl shadow-lg z-20 min-w-[160px] py-1">
+                      {['Shortlisted', 'Interview', 'Rejected', 'Withdrawn'].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => handleBulkStatusChange(s)}
+                          className="w-full text-left px-3 py-1.5 text-[10px] font-semibold text-[#2C1B57] hover:bg-[#F8F5FF]"
+                        >
+                          Move to {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSelectedIds([])}
+                  className="text-[9px] text-[#6F687A] hover:text-rose-600 px-1 ml-auto"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {/* Applications Scrollable List */}
+            <div className="space-y-1.5 max-h-[calc(100vh-360px)] overflow-y-auto pr-1">
+              {filteredCandidates.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-2xl border border-[#E8E3EF]">
+                  <Users className="w-10 h-10 text-[#B29CFE] mx-auto mb-2 opacity-50" />
+                  <p className="text-xs font-bold text-[#2C1B57]">No applications</p>
+                  <p className="text-[10px] text-[#6F687A] mt-1">
+                    {jobFilteredCandidates.length === 0
+                      ? 'No one has applied to this job yet'
+                      : 'Try adjusting filters'}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <label className="flex items-center gap-2 px-2 py-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedIds.length === filteredCandidates.length &&
+                        filteredCandidates.length > 0
+                      }
+                      onChange={toggleSelectAll}
+                      className="w-3 h-3 rounded accent-[#42326E] cursor-pointer"
+                    />
+                    <span className="text-[9px] text-[#6F687A] font-semibold">
+                      Select all ({filteredCandidates.length})
+                    </span>
+                  </label>
+
+                  {filteredCandidates.map((cand) => {
+                    const status = (cand as any).status || cand.stage;
+                    const isSelected = selectedApp?._id === cand.id;
+                    const avatarUrl = (cand as any).avatarUrl;
+                    const showAvatarImage = avatarUrl && !avatarErrors.has(cand.id);
+
+                    return (
+                      <div
+                        key={cand.id}
+                        onClick={() => handleSelectCandidate(cand)}
+                        className={`bg-white rounded-xl border p-2.5 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-[#42326E] shadow-md ring-2 ring-[#EDE6FA]'
+                            : 'border-[#E8E3EF] hover:border-[#B29CFE] hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(cand.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleSelect(cand.id);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1 w-3 h-3 rounded accent-[#42326E] cursor-pointer shrink-0"
+                          />
+
+                          {showAvatarImage ? (
+                            <img
+                              src={avatarUrl}
+                              alt={cand.name}
+                              className="w-9 h-9 rounded-lg object-cover border border-[#E8E3EF] shrink-0"
+                              onError={() => handleAvatarError(cand.id)}
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div
+                              className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-[10px] shadow-xs shrink-0"
+                              style={{ backgroundColor: cand.avatarBg }}
+                            >
+                              {getInitials(cand.name)}
+                            </div>
+                          )}
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-bold text-[11px] text-[#2C1B57] truncate leading-tight flex items-center gap-1">
+                                  {cand.name}
+                                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                </h3>
+                                <p className="text-[10px] text-[#6F687A] truncate leading-tight mt-0.5">
+                                  {cand.role}
+                                </p>
+                              </div>
+                              <span
+                                className={`text-xs font-extrabold shrink-0 ${matchColor(cand.matchScore)}`}
+                              >
+                                {cand.matchScore}%
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              <span
+                                className={`text-[8px] px-1 py-0.5 rounded font-semibold border ${
+                                  STATUS_COLOR_MAP[status] || STATUS_COLOR_MAP.Applied
+                                }`}
+                              >
+                                {status}
+                              </span>
+                              {cand.location && (
+                                <span className="text-[8px] text-[#6F687A] flex items-center gap-0.5">
+                                  <MapPin className="w-2 h-2" />
+                                  {cand.location.split(',')[0]}
+                                </span>
+                              )}
+                              {cand.bookmarked && (
+                                <span className="text-[9px] text-amber-600">⭐</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={(e) => handleBookmark(cand.id, e)}
+                            className={`p-0.5 rounded-lg transition-colors shrink-0 ${
+                              cand.bookmarked
+                                ? 'text-amber-500'
+                                : 'text-[#6F687A] hover:text-amber-500'
+                            }`}
+                          >
+                            <Bookmark
+                              className={`w-3 h-3 ${cand.bookmarked ? 'fill-current' : ''}`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ═════════════════════════════════════════════════════ */}
+        {/* COLUMN 3: DETAIL PANEL (same as original)             */}
+        {/* ═════════════════════════════════════════════════════ */}
+        {selectedJob && (selectedApp || loadingDetails) && (
           <div
             className={`bg-white rounded-2xl border border-[#E8E3EF] overflow-hidden ${
               showMobileDetail ? 'block' : 'hidden xl:block'
@@ -679,12 +1035,17 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                     {!isTerminalStatus && selectedApp.workflow && (
                       <div className="pt-3 border-t border-[#EDE6FA]">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] text-[#6F687A] font-bold mr-1">Move to:</span>
+                          <span className="text-[10px] text-[#6F687A] font-bold mr-1">
+                            Move to:
+                          </span>
                           {selectedApp.workflow.allowedNextStatuses.length === 0 ? (
-                            <p className="text-[10px] text-[#9C94A7] italic">No further actions</p>
+                            <p className="text-[10px] text-[#9C94A7] italic">
+                              No further actions
+                            </p>
                           ) : (
                             selectedApp.workflow.allowedNextStatuses.map((nextStatus) => {
-                              const isReject = nextStatus === 'Rejected' || nextStatus === 'Withdrawn';
+                              const isReject =
+                                nextStatus === 'Rejected' || nextStatus === 'Withdrawn';
                               return (
                                 <button
                                   key={nextStatus}
@@ -713,7 +1074,7 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                     )}
                   </section>
 
-                  {/* QUICK CONTACT — ONLY CALL & WHATSAPP */}
+                  {/* QUICK CONTACT */}
                   {selectedApp.candidatePhone && (
                     <div className="grid grid-cols-2 gap-2">
                       <a
@@ -733,7 +1094,7 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                     </div>
                   )}
 
-                  {/* ⭐ RESUME SECTION — PROMINENT WITH VIEW/DOWNLOAD/OPEN */}
+                  {/* RESUME SECTION */}
                   {selectedApp.resumeUrl ? (
                     <section className="bg-gradient-to-br from-rose-50 to-orange-50 border-2 border-rose-200 rounded-2xl p-4">
                       <h3 className="font-bold text-xs text-[#2C1B57] flex items-center gap-1.5 mb-3 uppercase tracking-wider">
@@ -748,7 +1109,9 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                           <p className="text-xs font-bold text-[#2C1B57] truncate">
                             {selectedApp.resumeFileName || 'Resume.pdf'}
                           </p>
-                          <p className="text-[10px] text-[#6F687A]">PDF Document • Click below to preview</p>
+                          <p className="text-[10px] text-[#6F687A]">
+                            PDF Document • Click below to preview
+                          </p>
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
@@ -783,7 +1146,9 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                     <section className="bg-gray-50 border border-gray-200 rounded-2xl p-4 text-center">
                       <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                       <p className="text-xs font-semibold text-gray-500">No Resume Uploaded</p>
-                      <p className="text-[10px] text-gray-400 mt-1">Candidate hasn't attached a resume</p>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        Candidate hasn't attached a resume
+                      </p>
                     </section>
                   )}
 
@@ -856,7 +1221,11 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                         <InfoRow label="Level" value={selectedApp.candidateExperienceLevel} />
                         <InfoRow
                           label="Years"
-                          value={selectedApp.candidateExperience ? `${selectedApp.candidateExperience} yrs` : '—'}
+                          value={
+                            selectedApp.candidateExperience
+                              ? `${selectedApp.candidateExperience} yrs`
+                              : '—'
+                          }
                         />
                         <InfoRow label="Current Role" value={selectedApp.candidateJobTitle} />
                         <InfoRow label="Company" value={selectedApp.candidateCurrentCompany} />
@@ -875,7 +1244,10 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                             label="Specialization"
                             value={selectedApp.candidateEducation.specialization}
                           />
-                          <InfoRow label="College" value={selectedApp.candidateEducation.collegeName} />
+                          <InfoRow
+                            label="College"
+                            value={selectedApp.candidateEducation.collegeName}
+                          />
                           <InfoRow label="End Year" value={selectedApp.candidateEducation.endYear} />
                         </div>
                       ) : (
@@ -889,7 +1261,9 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                     <section className="bg-[#FCFCF7] rounded-2xl p-3">
                       <h3 className="font-bold text-[10px] text-[#2C1B57] flex items-center gap-1 mb-2 uppercase tracking-wider">
                         <Sparkles className="w-3 h-3" /> Skills{' '}
-                        <span className="text-[#6F687A]">({selectedApp.candidateSkills.length})</span>
+                        <span className="text-[#6F687A]">
+                          ({selectedApp.candidateSkills.length})
+                        </span>
                       </h3>
                       <div className="flex flex-wrap gap-1">
                         {selectedApp.candidateSkills.map((skill, i) => (
@@ -969,9 +1343,7 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
                               <p className="text-[11px] font-semibold text-[#2C1B57] leading-tight">
                                 {m.title}
                               </p>
-                              {m.time && (
-                                <p className="text-[9px] text-[#9C94A7]">{m.time}</p>
-                              )}
+                              {m.time && <p className="text-[9px] text-[#9C94A7]">{m.time}</p>}
                             </div>
                           </div>
                         ))}
@@ -994,9 +1366,33 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
             ) : null}
           </div>
         )}
+
+        {/* EMPTY STATE — When job selected but no detail */}
+        {selectedJob && !selectedApp && !loadingDetails && (
+          <div className="hidden xl:flex items-center justify-center bg-white rounded-2xl border border-[#E8E3EF] border-dashed">
+            <div className="text-center p-8">
+              <UserCheck className="w-16 h-16 text-[#B29CFE] mx-auto mb-3 opacity-40" />
+              <p className="text-sm font-bold text-[#2C1B57]">Select a candidate</p>
+              <p className="text-xs text-[#6F687A] mt-1">
+                Choose an application from the list to view full details
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* CONFIRMATION MODAL */}
+      {/* EMPTY STATE — When no job selected (initial view) */}
+      {!selectedJob && !jobsLoading && jobs.length > 0 && (
+        <div className="text-center py-16 bg-white rounded-2xl border border-[#E8E3EF] border-dashed">
+          <Briefcase className="w-16 h-16 text-[#B29CFE] mx-auto mb-3 opacity-40" />
+          <p className="text-sm font-bold text-[#2C1B57]">Select a Job to View Applications</p>
+          <p className="text-xs text-[#6F687A] mt-1 max-w-md mx-auto">
+            Click any job from the left panel to see the candidates who applied to it
+          </p>
+        </div>
+      )}
+
+      {/* ═══════ CONFIRMATION MODAL ═══════ */}
       {confirmAction && selectedApp && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl">
@@ -1037,7 +1433,7 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
         </div>
       )}
 
-      {/* RESUME PREVIEW MODAL */}
+      {/* ═══════ RESUME PREVIEW MODAL ═══════ */}
       {showResumeModal && selectedApp?.resumeUrl && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-5xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden">
@@ -1089,7 +1485,7 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
         </div>
       )}
 
-      {/* TOAST */}
+      {/* ═══════ TOAST ═══════ */}
       {toast && (
         <div
           className={`fixed bottom-4 right-4 z-[100] px-4 py-2.5 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2 animate-in slide-in-from-bottom duration-200 ${
@@ -1114,7 +1510,9 @@ export const CandidatesView: React.FC<CandidatesViewProps> = ({
   );
 };
 
+// ═══════════════════════════════════════════════════════
 // HELPERS
+// ═══════════════════════════════════════════════════════
 const InfoRow: React.FC<{ label: string; value?: string | number }> = ({ label, value }) => (
   <div className="flex justify-between gap-2 text-[11px]">
     <span className="text-[#6F687A] shrink-0">{label}:</span>
