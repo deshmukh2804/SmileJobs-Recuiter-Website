@@ -132,6 +132,7 @@ class ProfilePurchaseController {
       return res.status(200).json({ success: true, data: result });
     } catch (err) {
       console.error('[ProfilePurchase] getUnlockedProfiles error:', err.message);
+      console.error('[ProfilePurchase] getUnlockedProfiles stack:', err.stack);
       return res.status(500).json({ success: false, message: 'Failed to fetch unlocked profiles', error: err.message });
     }
   }
