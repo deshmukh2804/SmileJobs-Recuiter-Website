@@ -14,6 +14,7 @@ router.post('/verify', profilePurchaseController.verifyPayment.bind(profilePurch
 router.get('/credits', profilePurchaseController.getCredits.bind(profilePurchaseController));
 router.post('/unlock', profilePurchaseController.unlockCandidate.bind(profilePurchaseController));
 router.get('/unlocked-ids', profilePurchaseController.getUnlockedCandidateIds.bind(profilePurchaseController));
+router.get('/unlocked-profiles', profilePurchaseController.getUnlockedProfiles.bind(profilePurchaseController));
 router.get('/purchases', profilePurchaseController.listMyPurchases.bind(profilePurchaseController));
 router.get('/resume/:candidateId', profilePurchaseController.streamResume.bind(profilePurchaseController));
 

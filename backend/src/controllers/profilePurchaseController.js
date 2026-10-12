@@ -207,6 +207,34 @@ class ProfilePurchaseController {
       });
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // NEW ENDPOINT: Auto-reveal unlocked profiles from general pool
+  // GET /api/v1/profile-purchase/unlocked-profiles
+  // Logic:
+  //  - If recruiter already has N persisted entitlements, return those N profiles
+  //  - If recruiter has unused credits, auto-consume them to unlock N random
+  //    candidates from the general user pool (excluding already-unlocked ones)
+  //  - Return revealed profiles with email, phone, resume URL
+  // ═══════════════════════════════════════════════════════════════
+  async getUnlockedProfiles(req, res) {
+    try {
+      const recruiterId = req.user._id || req.user.id;
+      const result = await profilePurchaseService.getUnlockedProfilesWithAutoReveal(recruiterId);
+
+      return res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (err) {
+      console.error('[ProfilePurchase] getUnlockedProfiles error:', err.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch unlocked profiles',
+        error: err.message,
+      });
+    }
+  }
 }
 
 module.exports = new ProfilePurchaseController();

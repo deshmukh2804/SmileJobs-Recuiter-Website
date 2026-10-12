@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Razorpay = require('razorpay');
 const ProfilePurchase = require('../../models/profilePurchaseModel');
 const ProfileEntitlement = require('../../models/profileEntitlementModel');
+const User = require('../../models/userModel');
 const pricingService = require('./pricingService');
 
 // ═══════════════════════════════════════════════════════════════
@@ -10,10 +11,8 @@ const pricingService = require('./pricingService');
 // ═══════════════════════════════════════════════════════════════
 let RecruiterCredit;
 try {
-  // Try to load existing model file if present
   RecruiterCredit = require('../../models/recruiterCreditModel');
 } catch (e) {
-  // Fallback: Define schema inline so service runs regardless
   const recruiterCreditSchema = new mongoose.Schema(
     {
       recruiterId: {
@@ -292,6 +291,163 @@ class ProfilePurchaseService {
       .skip(skip)
       .limit(limit)
       .lean();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // NEW: Auto-reveal unlocked profiles with lazy credit consumption
+  // Logic:
+  //  1. Fetch all existing active entitlements for this recruiter
+  //  2. If recruiter has unused credits (balance > 0), auto-consume them
+  //     by picking random candidates from User collection (excluding
+  //     already-unlocked ones) and creating entitlements
+  //  3. Return the full list of entitled candidates with revealed
+  //     email, phone, and resumeUrl
+  // ═══════════════════════════════════════════════════════════════
+  async getUnlockedProfilesWithAutoReveal(recruiterId) {
+    const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
+
+    // Step 1: Fetch existing entitlements
+    let entitlements = await ProfileEntitlement.find({
+      recruiterId: rId,
+      status: 'active',
+    }).lean();
+
+    const alreadyUnlockedIds = entitlements.map((e) => e.candidateId.toString());
+
+    // Step 2: Check for unused credits and auto-consume them
+    const creditDoc = await RecruiterCredit.findOne({ recruiterId: rId });
+    let availableBalance = creditDoc ? creditDoc.balance : 0;
+
+    if (availableBalance > 0) {
+      // Fetch random candidates from User pool, excluding already-unlocked ones
+      const excludeIds = alreadyUnlockedIds.map(
+        (id) => new mongoose.Types.ObjectId(id)
+      );
+
+      // Build base filter: exclude recruiters, only include candidate-type users
+      const baseFilter = {
+        _id: { $nin: excludeIds },
+        $and: [
+          {
+            $or: [
+              { role: { $exists: false } },
+              { role: 'user' },
+              { role: 'candidate' },
+              { role: 'jobseeker' },
+            ],
+          },
+        ],
+      };
+
+      // Use aggregation $sample for random selection
+      const randomCandidates = await User.aggregate([
+        { $match: baseFilter },
+        { $sample: { size: availableBalance } },
+      ]);
+
+      if (randomCandidates.length > 0) {
+        // Atomically decrement credit balance by the number we're actually unlocking
+        const unlockCount = randomCandidates.length;
+        const updatedCredit = await RecruiterCredit.findOneAndUpdate(
+          { recruiterId: rId, balance: { $gte: unlockCount } },
+          { $inc: { balance: -unlockCount, totalUsed: unlockCount } },
+          { new: true }
+        );
+
+        if (updatedCredit) {
+          // Create entitlements for each selected candidate
+          const newEntitlements = [];
+          for (const candidate of randomCandidates) {
+            try {
+              const entitlement = await ProfileEntitlement.findOneAndUpdate(
+                { recruiterId: rId, candidateId: candidate._id },
+                {
+                  $setOnInsert: {
+                    recruiterId: rId,
+                    candidateId: candidate._id,
+                    status: 'active',
+                    pricePaidInPaise: 0,
+                    currency: 'INR',
+                    grantedAt: new Date(),
+                  },
+                },
+                { upsert: true, new: true }
+              );
+              newEntitlements.push(entitlement);
+            } catch (entErr) {
+              console.error('[ProfilePurchase] Entitlement upsert error:', entErr.message);
+            }
+          }
+
+          // Refresh entitlements list
+          entitlements = await ProfileEntitlement.find({
+            recruiterId: rId,
+            status: 'active',
+          }).lean();
+        }
+      }
+    }
+
+    // Step 3: Hydrate entitlements with candidate profile data
+    const candidateIds = entitlements.map((e) => e.candidateId);
+    const candidates = await User.find({ _id: { $in: candidateIds } })
+      .select('name fullName firstName lastName email phone phoneNumber mobile resume resumeUrl profilePicture avatar headline title skills experience location createdAt')
+      .lean();
+
+    const candidateMap = new Map();
+    candidates.forEach((c) => {
+      candidateMap.set(c._id.toString(), c);
+    });
+
+    // Build final response with revealed fields
+    const profiles = entitlements
+      .map((ent) => {
+        const candidate = candidateMap.get(ent.candidateId.toString());
+        if (!candidate) return null;
+
+        const fullName =
+          candidate.name ||
+          candidate.fullName ||
+          [candidate.firstName, candidate.lastName].filter(Boolean).join(' ') ||
+          'Unnamed Candidate';
+
+        const phone =
+          candidate.phone ||
+          candidate.phoneNumber ||
+          candidate.mobile ||
+          null;
+
+        const resume =
+          candidate.resume ||
+          candidate.resumeUrl ||
+          null;
+
+        return {
+          _id: candidate._id,
+          candidateId: candidate._id,
+          name: fullName,
+          email: candidate.email || null,
+          phone,
+          resume,
+          resumeUrl: resume,
+          profilePicture: candidate.profilePicture || candidate.avatar || null,
+          headline: candidate.headline || candidate.title || null,
+          skills: candidate.skills || [],
+          location: candidate.location || null,
+          unlockedAt: ent.grantedAt || ent.createdAt,
+          entitlementId: ent._id,
+        };
+      })
+      .filter(Boolean);
+
+    // Final credit snapshot
+    const finalCredits = await this.getRecruiterCredits(rId);
+
+    return {
+      profiles,
+      totalUnlocked: profiles.length,
+      credits: finalCredits,
+    };
   }
 }
 
