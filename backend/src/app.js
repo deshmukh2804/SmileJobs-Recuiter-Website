@@ -28,7 +28,7 @@ const jobRoutes = require("./routes/jobRoutes");
 const candidateRoutes = require("./routes/candidateRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const paymentWebhookRoutes = require("./routes/paymentWebhookRoutes");
-
+const profilePurchaseRoutes = require("./routes/profilePurchaseRoutes");
 const app = express();
 
 // Trust reverse proxies (Nginx / DigitalOcean / Render / AWS)
@@ -152,7 +152,7 @@ app.use("/api/v1/jobs", jobRoutes);
 app.use("/api/v1/candidates", candidateRoutes);
 app.use("/api/v1/subscription", subscriptionRoutes);
 app.use("/api/v1/subscriptions", subscriptionRoutes); // Alias for safety
-
+app.use("/api/v1/profile-purchase", profilePurchaseRoutes);
 // ═══ Error Handling Middleware ═══
 app.use(notFound);
 app.use(errorHandler);
