@@ -51,7 +51,6 @@ function getAdminUserModel() {
   }
 
   if (!adminConn) {
-    console.warn('[ProfilePurchaseService] ⚠️ careerflow_admin connection not ready, using global mongoose');
     adminConn = mongoose;
   }
 
@@ -62,7 +61,6 @@ function getAdminUserModel() {
 
   const adminUserSchema = new mongoose.Schema({}, { timestamps: true, collection: 'users', strict: false });
   AdminPoolUser = adminConn.model('AdminPoolUser', adminUserSchema);
-  console.log('[ProfilePurchaseService] ✅ AdminPoolUser model bound to careerflow_admin.users');
   return AdminPoolUser;
 }
 
@@ -176,13 +174,9 @@ function isRecruiterSelf(doc, recruiterIdStr, recruiterEmail) {
   const docEmail = (doc.email || '').toLowerCase().trim();
   const recEmail = (recruiterEmail || '').toLowerCase().trim();
 
-  // Match by ID
   if (docId === recruiterIdStr) return true;
-
-  // Match by email (most reliable cross-database check)
   if (recEmail && docEmail && docEmail === recEmail) return true;
 
-  // Match by role
   const role = (doc.role || '').toLowerCase();
   if (['admin', 'superadmin', 'recruiter', 'employer', 'company'].includes(role)) return true;
 
@@ -231,11 +225,55 @@ class ProfilePurchaseService {
   }
 
   async getActivePricing() {
-    const pricing = await ProfilePricing.getActivePricing();
-    if (!pricing) {
-      return { price: 2, priceInPaise: 200, currency: 'INR', minQuantity: 1, maxQuantity: 100, enabled: true, description: 'Candidate Profile Direct Unlock' };
+    try {
+      const pricing = await ProfilePricing.getActivePricing();
+      if (pricing) {
+        return {
+          price: pricing.price !== undefined ? pricing.price : 2,
+          priceInPaise: pricing.priceInPaise !== undefined ? pricing.priceInPaise : Math.round((pricing.price || 2) * 100),
+          currency: pricing.currency || 'INR',
+          minQuantity: pricing.minQuantity || 1,
+          maxQuantity: pricing.maxQuantity || 100,
+          enabled: pricing.enabled !== undefined ? pricing.enabled : true,
+          description: pricing.description || 'Candidate Profile Direct Unlock',
+        };
+      }
+    } catch (err) {
+      console.warn('[ProfilePurchaseService] ProfilePricing query warning:', err.message);
     }
-    return pricing;
+
+    // Direct native fallback to careerflow_admin.profilepricings
+    try {
+      const dbModule = require('../../config/db');
+      const adminConn = typeof dbModule.getAdminConnection === 'function' ? dbModule.getAdminConnection() : dbModule.adminConnection;
+      if (adminConn && adminConn.db) {
+        const rawPricing = await adminConn.db.collection('profilepricings').findOne({ enabled: true });
+        if (rawPricing) {
+          return {
+            price: rawPricing.price || 2,
+            priceInPaise: rawPricing.priceInPaise || Math.round((rawPricing.price || 2) * 100),
+            currency: rawPricing.currency || 'INR',
+            minQuantity: rawPricing.minQuantity || 1,
+            maxQuantity: rawPricing.maxQuantity || 100,
+            enabled: rawPricing.enabled !== undefined ? rawPricing.enabled : true,
+            description: rawPricing.description || 'Candidate Profile Direct Unlock',
+          };
+        }
+      }
+    } catch (nativeErr) {
+      console.warn('[ProfilePurchaseService] Native pricing query warning:', nativeErr.message);
+    }
+
+    // Safe hardcoded default
+    return {
+      price: 2,
+      priceInPaise: 200,
+      currency: 'INR',
+      minQuantity: 1,
+      maxQuantity: 100,
+      enabled: true,
+      description: 'Candidate Profile Direct Unlock',
+    };
   }
 
   async getQuote(quantity) {
@@ -357,92 +395,65 @@ class ProfilePurchaseService {
     return { success: true, entitlement, credits: updatedCredits };
   }
 
-  /**
-   * MAIN AUTO-REVEAL PIPELINE
-   * @param {string|ObjectId} recruiterId - The recruiter's _id from recruiter_db
-   * @param {string} recruiterEmail - The recruiter's email (CRITICAL for cross-DB exclusion)
-   */
   async getUnlockedProfilesWithAutoReveal(recruiterId, recruiterEmail) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
     const rIdStr = rId.toString();
     const rEmail = (recruiterEmail || '').toLowerCase().trim();
     const AdminUser = getAdminUserModel();
 
-    console.log(`\n[ProfilePurchase] ═══════════════════════════════════════`);
-    console.log(`[ProfilePurchase] Recruiter ID: ${rIdStr}`);
-    console.log(`[ProfilePurchase] Recruiter Email: ${rEmail || '(not provided)'}`);
-
-    // ── STEP 1: DIAGNOSTIC — Log everything in careerflow_admin.users ──
     let totalDocsInCollection = 0;
     try {
       totalDocsInCollection = await AdminUser.countDocuments({});
-      console.log(`[ProfilePurchase] 📊 Total documents in careerflow_admin.users: ${totalDocsInCollection}`);
-
-      const allDocs = await AdminUser.find({}).limit(20).lean();
-      for (const doc of allDocs) {
-        const isSelf = isRecruiterSelf(doc, rIdStr, rEmail);
-        console.log(`[ProfilePurchase]   → _id: ${doc._id} | email: ${doc.email || 'N/A'} | name: ${doc.name || doc.fullName || 'N/A'} | role: ${doc.role || 'N/A'} | IS_SELF: ${isSelf}`);
-      }
     } catch (diagErr) {
-      console.error('[ProfilePurchase] Diagnostic scan failed:', diagErr.message);
+      console.warn('[ProfilePurchase] Diagnostic count warning:', diagErr.message);
     }
 
-    // ── STEP 2: Fetch existing entitlements ──
     let entitlements = await ProfileEntitlement.find({ recruiterId: rId, status: 'active' }).lean();
-    console.log(`[ProfilePurchase] Active entitlements: ${entitlements.length}`);
-
-    // ── STEP 3: Fetch credit balance ──
     const creditDoc = await RecruiterCredit.findOne({ recruiterId: rId });
     let availableBalance = creditDoc ? creditDoc.balance : 0;
-    console.log(`[ProfilePurchase] Credit balance: ${availableBalance}`);
 
-    // ── STEP 4: PURGE self-entitlements (recruiter's own profile) ──
-    const selfEntitlements = [];
+    // Purge self-entitlements (recruiter's own account)
     const validEntitlements = [];
+    let refundedCount = 0;
 
     for (const ent of entitlements) {
-      const candIdStr = ent.candidateId.toString();
+      const candIdStr = ent.candidateId ? ent.candidateId.toString() : '';
       let isSelf = candIdStr === rIdStr;
 
-      // Also check by email — fetch the candidate doc to verify
       if (!isSelf && rEmail) {
         try {
           const candDoc = await AdminUser.findOne({ _id: ent.candidateId }).lean();
           if (candDoc && isRecruiterSelf(candDoc, rIdStr, rEmail)) {
             isSelf = true;
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          // ignore
+        }
       }
 
       if (isSelf) {
-        selfEntitlements.push(ent);
+        await ProfileEntitlement.deleteOne({ _id: ent._id });
+        refundedCount++;
       } else {
         validEntitlements.push(ent);
       }
     }
 
-    if (selfEntitlements.length > 0) {
-      console.log(`[ProfilePurchase] ⚠️ Found ${selfEntitlements.length} SELF-entitlement(s). Purging and refunding...`);
-      for (const selfEnt of selfEntitlements) {
-        await ProfileEntitlement.deleteOne({ _id: selfEnt._id });
-        await RecruiterCredit.findOneAndUpdate({ recruiterId: rId }, { $inc: { balance: 1, totalExpended: -1 } });
-        availableBalance += 1;
-        console.log(`[ProfilePurchase]   ↩️ Refunded 1 credit for self-entitlement ${selfEnt._id}`);
-      }
+    if (refundedCount > 0) {
+      await RecruiterCredit.findOneAndUpdate({ recruiterId: rId }, { $inc: { balance: refundedCount, totalExpended: -refundedCount } });
+      availableBalance += refundedCount;
+      console.log(`[ProfilePurchase] ↩️ Refunded ${refundedCount} self-entitlements for recruiter ${rIdStr}`);
     }
 
     entitlements = validEntitlements;
     const alreadyUnlockedIds = entitlements.map((e) => e.candidateId.toString());
 
-    // ── STEP 5: AUTO-REVEAL new candidates if balance > 0 ──
+    // Auto-reveal real candidates if balance > 0
     if (availableBalance > 0) {
-      console.log(`[ProfilePurchase] 🎯 Auto-revealing up to ${availableBalance} candidates...`);
-
       const excludeObjIds = [...alreadyUnlockedIds, rIdStr]
         .filter((id) => mongoose.Types.ObjectId.isValid(id))
         .map((id) => new mongoose.Types.ObjectId(id));
 
-      // Build the exclusion filter — EMAIL is the key cross-database identifier
       const candidateFilter = {
         _id: { $nin: excludeObjIds },
         role: { $nin: ['admin', 'superadmin', 'recruiter', 'employer', 'company', 'Admin', 'Recruiter', 'Employer', 'SuperAdmin'] },
@@ -454,67 +465,40 @@ class ProfilePurchaseService {
 
       let randomCandidates = [];
 
-      // Method A: $sample aggregation
       try {
         randomCandidates = await AdminUser.aggregate([
           { $match: candidateFilter },
           { $sample: { size: availableBalance } },
         ]);
-        console.log(`[ProfilePurchase] Method A ($sample): found ${randomCandidates.length}`);
       } catch (aggErr) {
-        console.warn('[ProfilePurchase] Method A failed:', aggErr.message);
+        // ignore
       }
 
-      // Method B: .find() with limit
       if (!randomCandidates || randomCandidates.length === 0) {
         try {
           randomCandidates = await AdminUser.find(candidateFilter).limit(availableBalance).lean();
-          console.log(`[ProfilePurchase] Method B (find): found ${randomCandidates.length}`);
         } catch (findErr) {
-          console.warn('[ProfilePurchase] Method B failed:', findErr.message);
+          // ignore
         }
       }
 
-      // Method C: Native driver
       if (!randomCandidates || randomCandidates.length === 0) {
         try {
           const dbModule = require('../../config/db');
           const adminConn = typeof dbModule.getAdminConnection === 'function' ? dbModule.getAdminConnection() : dbModule.adminConnection;
           if (adminConn && adminConn.db) {
-            const nativeFilter = {
-              _id: { $nin: excludeObjIds },
-              role: { $nin: ['admin', 'superadmin', 'recruiter', 'employer', 'company', 'Admin', 'Recruiter', 'Employer', 'SuperAdmin'] },
-            };
-            if (rEmail) nativeFilter.email = { $ne: rEmail };
-
-            randomCandidates = await adminConn.db.collection('users').find(nativeFilter).limit(availableBalance).toArray();
-            console.log(`[ProfilePurchase] Method C (native): found ${randomCandidates.length}`);
+            randomCandidates = await adminConn.db.collection('users').find(candidateFilter).limit(availableBalance).toArray();
           }
         } catch (nativeErr) {
-          console.error('[ProfilePurchase] Method C failed:', nativeErr.message);
+          // ignore
         }
       }
 
-      // Method D: Broadest — exclude ONLY by email and own ID
-      if (!randomCandidates || randomCandidates.length === 0) {
-        try {
-          const broadFilter = { _id: { $nin: excludeObjIds } };
-          if (rEmail) broadFilter.email = { $ne: rEmail };
-          randomCandidates = await AdminUser.find(broadFilter).limit(availableBalance).lean();
-          console.log(`[ProfilePurchase] Method D (broad): found ${randomCandidates.length}`);
-        } catch (broadErr) {
-          console.error('[ProfilePurchase] Method D failed:', broadErr.message);
-        }
-      }
-
-      // Final safety filter: remove any candidate that is the recruiter
+      // Filter out any recruiter accounts safely
       if (randomCandidates && randomCandidates.length > 0) {
         randomCandidates = randomCandidates.filter((c) => !isRecruiterSelf(c, rIdStr, rEmail));
-        console.log(`[ProfilePurchase] After safety filter: ${randomCandidates.length} candidates`);
-      }
-
-      if (randomCandidates && randomCandidates.length > 0) {
         const countToUnlock = Math.min(randomCandidates.length, availableBalance);
+
         for (let i = 0; i < countToUnlock; i++) {
           const candidate = randomCandidates[i];
           try {
@@ -526,17 +510,14 @@ class ProfilePurchaseService {
               unlockedAt: new Date(),
             });
             entitlements.push(newEnt.toObject ? newEnt.toObject() : newEnt);
-            console.log(`[ProfilePurchase] 🔓 Unlocked: ${candidate.name || candidate.email} (${candidate._id})`);
           } catch (unlockErr) {
-            console.error(`[ProfilePurchase] ❌ Unlock error for ${candidate._id}:`, unlockErr.message);
+            console.error(`[ProfilePurchase] Unlock error for ${candidate._id}:`, unlockErr.message);
           }
         }
-      } else {
-        console.log(`[ProfilePurchase] ⚠️ No real candidates found in careerflow_admin.users (excluding recruiter)`);
       }
     }
 
-    // ── STEP 6: HYDRATE all valid entitlements ──
+    // Hydrate unlocked candidate profiles
     const candidateIds = entitlements
       .map((e) => e.candidateId)
       .filter((id) => mongoose.Types.ObjectId.isValid(id))
@@ -547,7 +528,7 @@ class ProfilePurchaseService {
       try {
         candidateDocs = await AdminUser.find({ _id: { $in: candidateIds } }).lean();
       } catch (fetchErr) {
-        console.error('[ProfilePurchase] Hydration fetch error:', fetchErr.message);
+        // ignore
       }
 
       if (!candidateDocs || candidateDocs.length === 0) {
@@ -558,7 +539,7 @@ class ProfilePurchaseService {
             candidateDocs = await adminConn.db.collection('users').find({ _id: { $in: candidateIds } }).toArray();
           }
         } catch (nativeFetchErr) {
-          console.error('[ProfilePurchase] Native hydration error:', nativeFetchErr.message);
+          // ignore
         }
       }
     }
@@ -570,18 +551,13 @@ class ProfilePurchaseService {
       }
     }
 
-    // ── STEP 7: Build final profiles (FINAL safety filter) ──
     const profiles = [];
     for (const ent of entitlements) {
       const candIdStr = ent.candidateId.toString();
       const rawCandidate = candidateMap.get(candIdStr);
 
       if (rawCandidate) {
-        // FINAL CHECK: never include recruiter's own profile
-        if (isRecruiterSelf(rawCandidate, rIdStr, rEmail)) {
-          console.log(`[ProfilePurchase] 🚫 BLOCKED self-profile in final output: ${rawCandidate.email}`);
-          continue;
-        }
+        if (isRecruiterSelf(rawCandidate, rIdStr, rEmail)) continue;
 
         const extracted = extractCandidateData(rawCandidate);
         profiles.push({
@@ -595,9 +571,6 @@ class ProfilePurchaseService {
 
     profiles.sort((a, b) => new Date(b.unlockedAt) - new Date(a.unlockedAt));
     const finalCredits = await this.getRecruiterCredits(rId);
-
-    console.log(`[ProfilePurchase] ✅ Returning ${profiles.length} real candidate profiles`);
-    console.log(`[ProfilePurchase] ═══════════════════════════════════════\n`);
 
     return {
       profiles,
@@ -615,35 +588,13 @@ class ProfilePurchaseService {
 
   async getPurchases(recruiterId) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
-    console.log(`[ProfilePurchase] Fetching purchases for recruiter ${rId}`);
 
-    // Try ObjectId format first
     let purchases = await ProfilePurchase.find({ recruiterId: rId }).sort({ createdAt: -1 }).lean();
-    console.log(`[ProfilePurchase] Found ${purchases.length} purchases (ObjectId query)`);
-
-    // Fallback: try string format
-    if (purchases.length === 0) {
+    if (!purchases || purchases.length === 0) {
       purchases = await ProfilePurchase.find({ recruiterId: rId.toString() }).sort({ createdAt: -1 }).lean();
-      console.log(`[ProfilePurchase] Found ${purchases.length} purchases (string query)`);
     }
 
-    // Diagnostic: log total count if still empty
-    if (purchases.length === 0) {
-      try {
-        const totalCount = await ProfilePurchase.countDocuments({});
-        console.log(`[ProfilePurchase] ⚠️ Total purchases in collection: ${totalCount}`);
-        if (totalCount > 0) {
-          const samples = await ProfilePurchase.find({}).limit(3).lean();
-          for (const s of samples) {
-            console.log(`[ProfilePurchase]   Sample: _id=${s._id} recruiterId=${s.recruiterId} status=${s.paymentStatus} qty=${s.quantity}`);
-          }
-        }
-      } catch (diagErr) {
-        console.error('[ProfilePurchase] Purchase diagnostic error:', diagErr.message);
-      }
-    }
-
-    return purchases;
+    return purchases || [];
   }
 }
 
