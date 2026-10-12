@@ -1,213 +1,170 @@
-const crypto = require("crypto");
-const profilePurchaseService = require("../profilePurchase/profilePurchaseService");
+const crypto = require('crypto');
 
-/**
- * WebhookService
- * Handles inbound Razorpay webhooks for both:
- * 1. Subscription / Plan payments
- * 2. Candidate Profile Unlock direct purchases
- */
+// ✅ FIX: subscriptionService lives in ../subscription/, NOT in ./ (same folder)
+let subscriptionService = null;
+try {
+  subscriptionService = require('../subscription/subscriptionService');
+} catch (e1) {
+  try {
+    subscriptionService = require('../subscriptionService');
+  } catch (e2) {
+    console.warn('[WebhookService] subscriptionService not found — subscription webhooks will be skipped');
+  }
+}
+
+// Profile Purchase service for credit-based unlocks
+let profilePurchaseService = null;
+try {
+  profilePurchaseService = require('../profilePurchase/profilePurchaseService');
+} catch (e) {
+  console.warn('[WebhookService] profilePurchaseService not found — profile purchase webhooks will be skipped');
+}
+
 class WebhookService {
-  /**
-   * Verify Razorpay HMAC-SHA256 Webhook Signature
-   * @param {Buffer|string} rawBody - Raw unparsed request body buffer or string
-   * @param {string} signature - Value from 'x-razorpay-signature' header
-   * @param {string} [secret] - Webhook secret override
-   * @returns {boolean}
-   */
-  verifySignature(rawBody, signature, secret) {
-    try {
-      const webhookSecret = secret || process.env.RAZORPAY_WEBHOOK_SECRET;
-      if (!webhookSecret) {
-        console.warn(
-          "[WebhookService] RAZORPAY_WEBHOOK_SECRET not configured in environment."
-        );
-        return false;
-      }
-
-      if (!signature) {
-        console.warn("[WebhookService] Missing x-razorpay-signature header.");
-        return false;
-      }
-
-      const expectedSignature = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(rawBody)
-        .digest("hex");
-
-      const signatureBuffer = Buffer.from(signature, "utf8");
-      const expectedBuffer = Buffer.from(expectedSignature, "utf8");
-
-      if (signatureBuffer.length !== expectedBuffer.length) {
-        return false;
-      }
-
-      return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
-    } catch (err) {
-      console.error("[WebhookService] Error verifying webhook signature:", err);
-      return false;
+  // ─── Signature Verification ───
+  verifyWebhookSignature(rawBody, signature) {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      throw new Error('Razorpay webhook secret not configured in environment');
     }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(rawBody)
+      .digest('hex');
+
+    return expectedSignature === signature;
   }
 
-  /**
-   * Main router for processing incoming webhook events
-   * @param {Object} eventPayload - Parsed JSON webhook payload
-   * @param {Object} [options] - Additional metadata or raw body
-   */
-  async processEvent(eventPayload, options = {}) {
-    if (!eventPayload || !eventPayload.event) {
-      throw new Error("Invalid webhook payload: missing event type");
-    }
+  // ─── Method 1: Called by paymentWebhookRoutes.js (your existing route) ───
+  // Signature: processEvent(eventId, eventType, payload)
+  async processEvent(eventId, eventType, payload) {
+    console.log(`[RazorpayWebhook] processEvent → ${eventType} [${eventId}]`);
 
-    const eventName = eventPayload.event;
-    console.log(`[WebhookService] Received webhook event: ${eventName}`);
-
-    switch (eventName) {
-      case "payment.captured":
-        return await this._handlePaymentCaptured(eventPayload);
-
-      case "payment.failed":
-        return await this._handlePaymentFailed(eventPayload);
-
-      case "order.paid":
-        return await this._handleOrderPaid(eventPayload);
-
-      case "subscription.charged":
-      case "subscription.activated":
-      case "subscription.halted":
-      case "subscription.cancelled":
-        return await this._handleSubscriptionEvent(eventPayload);
-
-      default:
-        console.log(
-          `[WebhookService] Unhandled event "${eventName}" acknowledged.`
-        );
-        return { handled: false, event: eventName };
-    }
-  }
-
-  /**
-   * Handle 'payment.captured' events
-   * Routes profile purchase orders to profilePurchaseService
-   */
-  async _handlePaymentCaptured(payload) {
     try {
-      const payment = payload?.payload?.payment?.entity;
-      const notes = payment?.notes || {};
-
-      // ----------------------------------------------------------------------
-      // ROUTING BLOCK: Profile Purchase Flow
-      // ----------------------------------------------------------------------
-      if (notes.purchaseType === "profile_purchase") {
-        console.log(
-          `[WebhookService] Routing payment.captured (${payment.id}) to ProfilePurchaseService`
-        );
-
-        const result = await profilePurchaseService.handleWebhookPaymentCaptured({
-          paymentId: payment.id,
-          orderId: payment.order_id,
-          amountInPaise: payment.amount,
-          currency: payment.currency,
-          status: payment.status,
-          notes: notes,
-          rawPayload: payload
-        });
-
-        return {
-          handled: true,
-          type: "profile_purchase",
-          paymentId: payment.id,
-          result
-        };
+      switch (eventType) {
+        case 'payment.captured':
+          return await this._handlePaymentCaptured({ payload });
+        case 'payment.failed':
+          return await this._handlePaymentFailed({ payload });
+        case 'order.paid':
+          return await this._handleOrderPaid({ payload });
+        case 'subscription.activated':
+        case 'subscription.charged':
+          return await this._handleSubscriptionEvent(eventType, payload);
+        default:
+          console.log(`[RazorpayWebhook] Unhandled event type: ${eventType}`);
+          return { handled: false, reason: 'Event type not tracked' };
       }
-
-      // ----------------------------------------------------------------------
-      // DEFAULT: Subscription / Core platform payment handling
-      // ----------------------------------------------------------------------
-      console.log(
-        `[WebhookService] Processing standard subscription payment.captured (${payment?.id})`
-      );
-
-      // Add existing subscription capture logic if present in your environment
-      return {
-        handled: true,
-        type: "subscription_or_standard",
-        paymentId: payment?.id
-      };
     } catch (err) {
-      console.error("[WebhookService] Error in _handlePaymentCaptured:", err);
+      console.error(`[RazorpayWebhook] Error processing ${eventType}:`, err.message);
       throw err;
     }
   }
 
-  /**
-   * Handle 'payment.failed' events
-   */
-  async _handlePaymentFailed(payload) {
-    try {
-      const payment = payload?.payload?.payment?.entity;
-      const notes = payment?.notes || {};
-
-      // ----------------------------------------------------------------------
-      // ROUTING BLOCK: Profile Purchase Failure
-      // ----------------------------------------------------------------------
-      if (notes.purchaseType === "profile_purchase") {
-        console.log(
-          `[WebhookService] Routing payment.failed (${payment.id}) to ProfilePurchaseService`
-        );
-
-        const result = await profilePurchaseService.handleWebhookPaymentFailed({
-          paymentId: payment.id,
-          orderId: payment.order_id,
-          failureReason:
-            payment.error_description ||
-            payment.error_reason ||
-            "Payment failed",
-          rawPayload: payload
-        });
-
-        return {
-          handled: true,
-          type: "profile_purchase_failed",
-          paymentId: payment.id,
-          result
-        };
-      }
-
-      console.warn(
-        `[WebhookService] Standard payment failed: ${payment?.id} (${payment?.error_description})`
-      );
-
-      return {
-        handled: true,
-        type: "standard_failed",
-        paymentId: payment?.id
-      };
-    } catch (err) {
-      console.error("[WebhookService] Error in _handlePaymentFailed:", err);
-      throw err;
+  // ─── Method 2: Full raw-body verification (alternative entry point) ───
+  // Signature: processWebhookEvent(rawBody, signature)
+  async processWebhookEvent(rawBody, signature) {
+    const isValid = this.verifyWebhookSignature(rawBody, signature);
+    if (!isValid) {
+      throw new Error('Invalid Razorpay webhook signature');
     }
+
+    const event = typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody;
+    const eventType = event.event;
+    const eventId = event.id || `evt_${Date.now()}`;
+
+    console.log(`[RazorpayWebhook] processWebhookEvent → ${eventType} [${eventId}]`);
+
+    return await this.processEvent(eventId, eventType, event.payload);
   }
 
-  /**
-   * Handle 'order.paid' events
-   */
-  async _handleOrderPaid(payload) {
-    const order = payload?.payload?.order?.entity;
-    console.log(`[WebhookService] order.paid received for order: ${order?.id}`);
-    return { handled: true, orderId: order?.id };
+  // ─── Internal Handlers ───
+
+  async _handlePaymentCaptured(event) {
+    const payment = event.payload?.payment?.entity;
+    if (!payment) return { handled: false, reason: 'No payment entity in payload' };
+
+    const notes = payment.notes || {};
+    const purchaseType = notes.purchaseType;
+
+    // 1. Profile Purchase Credits Handler
+    if (
+      profilePurchaseService &&
+      (purchaseType === 'profile_purchase_credits' || purchaseType === 'profile_purchase')
+    ) {
+      const razorpayOrderId = payment.order_id;
+      const razorpayPaymentId = payment.id;
+      const result = await profilePurchaseService.handleWebhookPaymentCaptured({
+        razorpayOrderId,
+        razorpayPaymentId,
+        rawPayload: event,
+      });
+      return { handled: true, type: 'profile_purchase', result };
+    }
+
+    // 2. Recruiter Subscription Plan Handler
+    if (subscriptionService && payment.order_id) {
+      try {
+        if (typeof subscriptionService.handleWebhookPaymentSuccess === 'function') {
+          const subResult = await subscriptionService.handleWebhookPaymentSuccess({
+            razorpayOrderId: payment.order_id,
+            razorpayPaymentId: payment.id,
+            rawPayload: event,
+          });
+          return { handled: true, type: 'subscription', result: subResult };
+        }
+      } catch (subErr) {
+        console.warn(`[RazorpayWebhook] Subscription handler warning: ${subErr.message}`);
+      }
+    }
+
+    return { handled: true, type: 'generic_payment', paymentId: payment.id };
   }
 
-  /**
-   * Handle recurring subscription lifecycle events
-   */
-  async _handleSubscriptionEvent(payload) {
-    const subscription = payload?.payload?.subscription?.entity;
-    const event = payload?.event;
-    console.log(
-      `[WebhookService] Subscription event "${event}" received for: ${subscription?.id}`
-    );
-    return { handled: true, event, subscriptionId: subscription?.id };
+  async _handlePaymentFailed(event) {
+    const payment = event.payload?.payment?.entity;
+    if (!payment) return { handled: false };
+
+    const razorpayOrderId = payment.order_id;
+    const failureReason = payment.error_description || payment.error_reason || 'Payment failed';
+
+    if (profilePurchaseService && razorpayOrderId) {
+      try {
+        await profilePurchaseService.handleWebhookPaymentFailed({
+          razorpayOrderId,
+          failureReason,
+          rawPayload: event,
+        });
+      } catch (err) {
+        console.warn(`[RazorpayWebhook] Profile purchase failure handler warning: ${err.message}`);
+      }
+    }
+
+    return { handled: true, type: 'payment_failed', paymentId: payment.id };
+  }
+
+  async _handleOrderPaid(event) {
+    const order = event.payload?.order?.entity;
+    if (!order) return { handled: false };
+    return { handled: true, type: 'order_paid', orderId: order.id };
+  }
+
+  async _handleSubscriptionEvent(eventType, payload) {
+    if (!subscriptionService) {
+      return { handled: false, reason: 'subscriptionService not available' };
+    }
+
+    try {
+      if (typeof subscriptionService.handleWebhookSubscriptionEvent === 'function') {
+        const result = await subscriptionService.handleWebhookSubscriptionEvent(eventType, payload);
+        return { handled: true, type: 'subscription', result };
+      }
+    } catch (err) {
+      console.warn(`[RazorpayWebhook] Subscription event handler warning: ${err.message}`);
+    }
+
+    return { handled: false, reason: 'No handler for subscription event' };
   }
 }
 

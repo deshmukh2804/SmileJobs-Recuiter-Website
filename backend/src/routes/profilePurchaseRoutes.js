@@ -1,48 +1,20 @@
-// backend/src/routes/profilePurchaseRoutes.js
-// All routes require authenticated recruiter. NO subscription requirement
-// (per spec: credits/unlocks are independent of subscription).
-
-const express = require("express");
+const express = require('express');
 const router = express.Router();
+const profilePurchaseController = require('../controllers/profilePurchaseController');
+const { protect, recruiterOnly, requireVerified } = require('../middleware/authMiddleware');
 
-const {
-  protect,
-  recruiterOnly,
-  requireVerified,
-} = require("../middleware/authMiddleware");
+router.use(protect);
+router.use(recruiterOnly);
+router.use(requireVerified);
 
-const {
-  getPricing,
-  getQuote,
-  createOrder,
-  verifyPayment,
-  getMyEntitlements,
-  getUnlockedIds,
-  listMyPurchases,
-  getSummary,
-  streamResume,
-} = require("../controllers/profilePurchaseController");
-
-// All routes require: logged-in recruiter with verified account
-router.use(protect, recruiterOnly, requireVerified);
-
-// Pricing (admin-controlled, read-only)
-router.get("/pricing", getPricing);
-router.post("/quote", getQuote);
-
-// Checkout flow
-router.post("/order", createOrder);
-router.post("/verify", verifyPayment);
-
-// Entitlements
-router.get("/entitlements", getMyEntitlements);
-router.get("/entitlements/ids", getUnlockedIds);
-
-// History + summary
-router.get("/purchases", listMyPurchases);
-router.get("/summary", getSummary);
-
-// Secured resume proxy (entitlement-gated inside controller)
-router.get("/resume/:candidateId", streamResume);
+router.get('/pricing', profilePurchaseController.getPricing.bind(profilePurchaseController));
+router.get('/quote', profilePurchaseController.getQuote.bind(profilePurchaseController));
+router.post('/orders', profilePurchaseController.createOrder.bind(profilePurchaseController));
+router.post('/verify', profilePurchaseController.verifyPayment.bind(profilePurchaseController));
+router.get('/credits', profilePurchaseController.getCredits.bind(profilePurchaseController));
+router.post('/unlock', profilePurchaseController.unlockCandidate.bind(profilePurchaseController));
+router.get('/unlocked-ids', profilePurchaseController.getUnlockedCandidateIds.bind(profilePurchaseController));
+router.get('/purchases', profilePurchaseController.listMyPurchases.bind(profilePurchaseController));
+router.get('/resume/:candidateId', profilePurchaseController.streamResume.bind(profilePurchaseController));
 
 module.exports = router;

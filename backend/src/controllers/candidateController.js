@@ -1,29 +1,15 @@
-// backend/src/controllers/candidateController.js
 const getJobModel = require("../models/jobModel");
 const getApplicationModel = require("../models/applicationModel");
 const ApiResponse = require("../utils/apiResponse");
 const ApiError = require("../utils/apiError");
 const quotaService = require("../services/subscription/quotaService");
 
-const entitlementService = require("../services/profilePurchase/entitlementService");
-const resumeProxyService = require("../services/profilePurchase/resumeProxyService");
-
-const AVATAR_COLORS = [
-  "#42326E",
-  "#6E5B9A",
-  "#C58A3A",
-  "#5A6E8F",
-  "#8A6E4F",
-  "#B29CFE",
-  "#7B5FA0",
-];
+const AVATAR_COLORS = ["#42326E", "#6E5B9A", "#C58A3A", "#5A6E8F", "#8A6E4F", "#B29CFE", "#7B5FA0"];
 
 // ═══════════════════════════════════════════════════════════════
-// RESUME PROXY URL BUILDER (external application-backend streaming URL)
-// This is the EXISTING smilejobs application-backend proxy for raw resume
-// files. Our NEW profile-purchase proxy (resumeProxyService.buildProxyUrl)
-// wraps THIS url behind entitlement checks when the recruiter has purchased
-// an unlock for the candidate.
+// RESUME PROXY URL BUILDER
+// Transforms raw Cloudinary resume URLs into proper proxy URLs
+// that stream validated PDF buffers with correct headers.
 // ═══════════════════════════════════════════════════════════════
 const APPLICATION_SERVICE_BASE_URL =
   process.env.APPLICATION_SERVICE_URL ||
@@ -38,19 +24,18 @@ const buildResumeProxyUrl = (userId) => {
 
 // ═══════════════════════════════════════════════════════
 // TRANSFORM APPLICATION TO CANDIDATE (LIST VIEW)
-// ✅ INCLUDES resumeUrl, resumeFileName, avatarUrl (external proxy)
-// Entitlement overlay runs AFTER this to swap resumeUrl → secure proxy.
+// ✅ NOW INCLUDES resumeUrl, resumeFileName, avatarUrl (via proxy)
 // ═══════════════════════════════════════════════════════
 const transformApplicationToCandidate = (app) => {
   const name = app.candidateName || "Anonymous";
-  const avatarBg =
-    AVATAR_COLORS[Math.abs(name.charCodeAt(0)) % AVATAR_COLORS.length];
+  const avatarBg = AVATAR_COLORS[Math.abs(name.charCodeAt(0)) % AVATAR_COLORS.length];
 
   const educationText =
     [app.candidateEducation?.degree, app.candidateEducation?.collegeName]
       .filter(Boolean)
       .join(", ") || "Not disclosed";
 
+  // ✅ Build proxy URL for resume (fixes corrupted/insecure Cloudinary URLs)
   const userIdStr = app.userId ? String(app.userId) : "";
   const proxyResumeUrl = userIdStr ? buildResumeProxyUrl(userIdStr) : "";
 
@@ -60,16 +45,13 @@ const transformApplicationToCandidate = (app) => {
     name,
     role: app.candidateJobTitle || app.jobTitle || "Applicant",
     department: app.candidateJobTitle || "General",
-    location:
-      [app.candidateCity, app.candidateSubLocation].filter(Boolean).join(", ") ||
-      app.jobLocation ||
-      "",
+    location: [app.candidateCity, app.candidateSubLocation].filter(Boolean).join(", ") || app.jobLocation || "",
     experienceYears: parseInt(app.candidateExperience) || 0,
     skills: app.candidateSkills || [],
     matchScore: app.matchPercentage || 0,
-    salaryExpected:
-      app.candidateCurrentSalary || app.jobSalary || "Not disclosed",
+    salaryExpected: app.candidateCurrentSalary || app.jobSalary || "Not disclosed",
     avatarBg,
+    // ✅ CRITICAL FIX: Include avatar and PROXY resume URL in list view
     avatarUrl: app.candidateAvatarUrl || "",
     resumeUrl: proxyResumeUrl || app.resumeUrl || "",
     resumeOriginalUrl: app.resumeUrl || "",
@@ -102,12 +84,13 @@ const transformApplicationToCandidate = (app) => {
 
 // ═══════════════════════════════════════════════════════
 // TRANSFORM APPLICATION TO FULL DETAIL VIEW
+// ✅ Uses proxy URL for resume
 // ═══════════════════════════════════════════════════════
 const transformApplicationToFullDetail = (app) => {
   const name = app.candidateName || "Anonymous";
-  const avatarBg =
-    AVATAR_COLORS[Math.abs(name.charCodeAt(0)) % AVATAR_COLORS.length];
+  const avatarBg = AVATAR_COLORS[Math.abs(name.charCodeAt(0)) % AVATAR_COLORS.length];
 
+  // ✅ Build proxy URL for resume (fixes corrupted/insecure Cloudinary URLs)
   const userIdStr = app.userId ? String(app.userId) : "";
   const proxyResumeUrl = userIdStr ? buildResumeProxyUrl(userIdStr) : "";
 
@@ -126,7 +109,7 @@ const transformApplicationToFullDetail = (app) => {
     candidateAvatarUrl: app.candidateAvatarUrl || "",
     avatarBg,
 
-    // Resume Fields (external proxy URL — entitlement overlay may swap this)
+    // ✅ RESUME FIELDS — Now using proxy URL
     resumeUrl: proxyResumeUrl || app.resumeUrl || "",
     resumeOriginalUrl: app.resumeUrl || "",
     resumeFileName: app.resumeFileName || "",
@@ -184,73 +167,12 @@ const transformApplicationToFullDetail = (app) => {
     // Timestamps
     appliedAt: app.appliedAt ? new Date(app.appliedAt).toISOString() : "",
     viewedAt: app.viewedAt ? new Date(app.viewedAt).toISOString() : null,
-    shortlistedAt: app.shortlistedAt
-      ? new Date(app.shortlistedAt).toISOString()
-      : null,
-    interviewAt: app.interviewAt
-      ? new Date(app.interviewAt).toISOString()
-      : null,
+    shortlistedAt: app.shortlistedAt ? new Date(app.shortlistedAt).toISOString() : null,
+    interviewAt: app.interviewAt ? new Date(app.interviewAt).toISOString() : null,
     createdAt: app.createdAt ? new Date(app.createdAt).toISOString() : "",
     updatedAt: app.updatedAt ? new Date(app.updatedAt).toISOString() : "",
   };
 };
-
-// ═══════════════════════════════════════════════════════════════
-// ENTITLEMENT OVERLAY (Profile Purchase feature)
-// Overlays:
-//   - isUnlocked (boolean)         → true if recruiter has purchased this candidate's unlock
-//   - resumeProxyUrl (string|null) → secure backend-proxy URL for unlocked resumes
-//
-// IMPORTANT (per user spec):
-//   - This is ADDITIVE only. We DO NOT remove or mask any field that
-//     quotaService.enforceCandidateAccessRules() already allowed through.
-//   - When unlocked, we ALSO swap `resumeUrl` to point to our secure proxy
-//     endpoint so the frontend hits our backend (entitlement-gated) instead
-//     of the external smilejobs application-backend URL.
-//   - When locked, we leave existing values untouched — the subscription tier
-//     may already allow some data through, and purchase is a SEPARATE feature.
-// ═══════════════════════════════════════════════════════════════
-async function applyEntitlementOverlay(recruiterId, items) {
-  if (!recruiterId) return items;
-  const isArray = Array.isArray(items);
-  const list = isArray ? items : [items];
-  if (list.length === 0) return items;
-
-  const candidateIds = list
-    .map((c) => c && (c._id || c.id))
-    .filter(Boolean)
-    .map(String);
-
-  const unlockedSet = await entitlementService.getUnlockedCandidateIdSet(
-    recruiterId,
-    candidateIds
-  );
-
-  const overlaid = list.map((c) => {
-    if (!c) return c;
-    const cid = String(c._id || c.id || "");
-    const isUnlocked = unlockedSet.has(cid);
-
-    const out = { ...c };
-    out.isUnlocked = isUnlocked;
-
-    if (isUnlocked) {
-      // Swap to secure backend proxy URL (entitlement-gated stream)
-      const secureProxyUrl = resumeProxyService.buildProxyUrl(cid);
-      out.resumeProxyUrl = secureProxyUrl;
-      // Keep external URL also available on resumeOriginalUrl for debugging,
-      // but set resumeUrl to the secure proxy so frontend uses it by default.
-      out.resumeUrl = secureProxyUrl;
-    } else {
-      out.resumeProxyUrl = null;
-      // Do NOT remove existing resumeUrl — purchase feature is additive.
-    }
-
-    return out;
-  });
-
-  return isArray ? overlaid : overlaid[0];
-}
 
 // ═══════════════════════════════════════════════════════
 // WORKFLOW STATUS TRANSITIONS
@@ -270,14 +192,7 @@ const TERMINAL_STATUSES = ["Hired", "Rejected", "Withdrawn"];
 
 const getWorkflowMeta = (currentStatus) => {
   const allowedNextStatuses = STATUS_WORKFLOW[currentStatus] || [];
-  const stages = [
-    "Applied",
-    "Viewed",
-    "Shortlisted",
-    "Interview",
-    "Offered",
-    "Hired",
-  ];
+  const stages = ["Applied", "Viewed", "Shortlisted", "Interview", "Offered", "Hired"];
   const currentStepIndex = stages.indexOf(currentStatus);
 
   return {
@@ -303,44 +218,27 @@ class CandidateController {
       const myJobIds = myJobs.map((j) => j._id);
 
       if (myJobIds.length === 0) {
-        return res
-          .status(200)
-          .json(new ApiResponse(200, [], "No jobs posted yet"));
+        return res.status(200).json(new ApiResponse(200, [], "No jobs posted yet"));
       }
 
-      const applications = await Application.find({
-        jobId: { $in: myJobIds },
-      })
+      const applications = await Application.find({ jobId: { $in: myJobIds } })
         .sort({ appliedAt: -1 })
         .lean();
 
       const rawCandidates = applications.map(transformApplicationToCandidate);
 
-      // Apply subscription-based masking (EXISTING logic — untouched)
+      // Apply subscription-based masking
       const maskedCandidates = await quotaService.enforceCandidateAccessRules(
         recruiterId,
         rawCandidates
       );
 
-      // Apply entitlement overlay (NEW — Profile Purchase feature)
-      const finalCandidates = await applyEntitlementOverlay(
-        recruiterId,
-        maskedCandidates
-      );
-
-      res
-        .status(200)
-        .json(
-          new ApiResponse(200, finalCandidates, "Candidates fetched successfully")
-        );
+      res.status(200).json(new ApiResponse(200, maskedCandidates, "Candidates fetched successfully"));
     } catch (error) {
       next(error);
     }
   }
 
-  // ═══════════════════════════════════════════════════════
-  // GET SINGLE CANDIDATE FULL DETAILS
-  // ═══════════════════════════════════════════════════════
   async getCandidateFullDetails(req, res, next) {
     try {
       const recruiterId = req.user._id;
@@ -352,6 +250,7 @@ class CandidateController {
       const application = await Application.findById(id).lean();
       if (!application) throw new ApiError(404, "Application not found");
 
+      // ✅ DEBUG LOG
       console.log("═══════════════════════════════════════════════");
       console.log("📄 CANDIDATE DETAILS REQUEST");
       console.log("Application ID:", id);
@@ -367,7 +266,7 @@ class CandidateController {
         throw new ApiError(403, "Not authorized to view this candidate");
       }
 
-      // Auto-mark as viewed if in Applied status (EXISTING logic — untouched)
+      // Auto-mark as viewed if in Applied status
       if (application.status === "Applied") {
         await Application.findByIdAndUpdate(id, {
           status: "Viewed",
@@ -379,35 +278,26 @@ class CandidateController {
 
       const fullDetails = transformApplicationToFullDetail(application);
 
+      // ✅ DEBUG LOG
       console.log("📤 SENDING TO FRONTEND:");
       console.log("resumeUrl (proxy):", fullDetails.resumeUrl);
       console.log("resumeOriginalUrl:", fullDetails.resumeOriginalUrl);
       console.log("resumeFileName:", fullDetails.resumeFileName);
       console.log("═══════════════════════════════════════════════");
 
-      // Apply subscription-based masking (EXISTING logic — untouched)
+      // Apply subscription-based masking
       const maskedDetails = await quotaService.enforceCandidateAccessRules(
         recruiterId,
         fullDetails
       );
 
+      // ✅ CHECK IF MASKING IS STRIPPING RESUME
       console.log("📦 AFTER MASKING:");
       console.log("resumeUrl:", maskedDetails.resumeUrl);
       console.log("═══════════════════════════════════════════════\n");
 
-      // Apply entitlement overlay (NEW — Profile Purchase feature)
-      const finalDetails = await applyEntitlementOverlay(
-        recruiterId,
-        maskedDetails
-      );
-
-      console.log("🔓 AFTER ENTITLEMENT OVERLAY:");
-      console.log("isUnlocked:", finalDetails.isUnlocked);
-      console.log("resumeProxyUrl:", finalDetails.resumeProxyUrl);
-      console.log("═══════════════════════════════════════════════\n");
-
-      // Add job details (EXISTING logic — untouched)
-      finalDetails.jobDetails = {
+      // Add job details
+      maskedDetails.jobDetails = {
         id: String(job._id),
         title: job.title,
         companyName: job.companyName,
@@ -419,14 +309,10 @@ class CandidateController {
         contactPerson: job.contactPerson || {},
       };
 
-      // Add workflow metadata (EXISTING logic — untouched)
-      finalDetails.workflow = getWorkflowMeta(application.status);
+      // Add workflow metadata
+      maskedDetails.workflow = getWorkflowMeta(application.status);
 
-      res
-        .status(200)
-        .json(
-          new ApiResponse(200, finalDetails, "Full candidate details fetched")
-        );
+      res.status(200).json(new ApiResponse(200, maskedDetails, "Full candidate details fetched"));
     } catch (error) {
       next(error);
     }
@@ -442,20 +328,11 @@ class CandidateController {
       const { status } = req.body;
 
       const validStatuses = [
-        "Applied",
-        "Viewed",
-        "Shortlisted",
-        "Interview",
-        "Offered",
-        "Hired",
-        "Rejected",
-        "Withdrawn",
+        "Applied", "Viewed", "Shortlisted", "Interview",
+        "Offered", "Hired", "Rejected", "Withdrawn",
       ];
       if (!validStatuses.includes(status)) {
-        throw new ApiError(
-          400,
-          `Invalid status. Must be one of: ${validStatuses.join(", ")}`
-        );
+        throw new ApiError(400, `Invalid status. Must be one of: ${validStatuses.join(", ")}`);
       }
 
       const Job = getJobModel();
@@ -476,9 +353,7 @@ class CandidateController {
       if (!allowedNext.includes(status) && status !== currentStatus) {
         throw new ApiError(
           400,
-          `Cannot move from ${currentStatus} to ${status}. Allowed: ${
-            allowedNext.join(", ") || "None"
-          }`
+          `Cannot move from ${currentStatus} to ${status}. Allowed: ${allowedNext.join(", ") || "None"}`
         );
       }
 
@@ -503,35 +378,22 @@ class CandidateController {
       if (!application.milestones) application.milestones = [];
       application.milestones.push({
         title: `Status changed to ${status}`,
-        time: new Date().toLocaleString("en-IN", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }),
+        time: new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }),
         completed: true,
         statusText: status,
-        isHighlight: ["Shortlisted", "Interview", "Offered", "Hired"].includes(
-          status
-        ),
+        isHighlight: ["Shortlisted", "Interview", "Offered", "Hired"].includes(status),
       });
 
       await application.save();
 
       const fullDetails = transformApplicationToFullDetail(application.toObject());
-
-      // Apply subscription masking + entitlement overlay before responding
       const maskedDetails = await quotaService.enforceCandidateAccessRules(
         recruiterId,
         fullDetails
       );
-      const finalDetails = await applyEntitlementOverlay(
-        recruiterId,
-        maskedDetails
-      );
-      finalDetails.workflow = getWorkflowMeta(status);
+      maskedDetails.workflow = getWorkflowMeta(status);
 
-      res
-        .status(200)
-        .json(new ApiResponse(200, finalDetails, `Status updated to ${status}`));
+      res.status(200).json(new ApiResponse(200, maskedDetails, `Status updated to ${status}`));
     } catch (error) {
       next(error);
     }
@@ -546,19 +408,9 @@ class CandidateController {
       const { id } = req.params;
       const { stage } = req.body;
 
-      const validStages = [
-        "Applied",
-        "Screening",
-        "Shortlisted",
-        "Interview",
-        "Selected",
-        "Hired",
-      ];
+      const validStages = ["Applied", "Screening", "Shortlisted", "Interview", "Selected", "Hired"];
       if (!validStages.includes(stage)) {
-        throw new ApiError(
-          400,
-          `Invalid stage. Must be one of: ${validStages.join(", ")}`
-        );
+        throw new ApiError(400, `Invalid stage. Must be one of: ${validStages.join(", ")}`);
       }
 
       const Job = getJobModel();
@@ -596,12 +448,8 @@ class CandidateController {
         recruiterId,
         candidate
       );
-      const finalCandidate = await applyEntitlementOverlay(
-        recruiterId,
-        maskedCandidate
-      );
 
-      res.status(200).json(new ApiResponse(200, finalCandidate, "Stage updated"));
+      res.status(200).json(new ApiResponse(200, maskedCandidate, "Stage updated"));
     } catch (error) {
       next(error);
     }
@@ -620,14 +468,8 @@ class CandidateController {
       }
 
       const validStatuses = [
-        "Applied",
-        "Viewed",
-        "Shortlisted",
-        "Interview",
-        "Offered",
-        "Hired",
-        "Rejected",
-        "Withdrawn",
+        "Applied", "Viewed", "Shortlisted", "Interview",
+        "Offered", "Hired", "Rejected", "Withdrawn",
       ];
       if (!validStatuses.includes(status)) {
         throw new ApiError(400, `Invalid status: ${status}`);
@@ -699,15 +541,7 @@ class CandidateController {
       application.bookmarked = !application.bookmarked;
       await application.save();
 
-      res
-        .status(200)
-        .json(
-          new ApiResponse(
-            200,
-            { bookmarked: application.bookmarked },
-            "Bookmark toggled"
-          )
-        );
+      res.status(200).json(new ApiResponse(200, { bookmarked: application.bookmarked }, "Bookmark toggled"));
     } catch (error) {
       next(error);
     }
@@ -722,8 +556,7 @@ class CandidateController {
       const { id } = req.params;
       const { note } = req.body;
 
-      if (!note || !note.trim())
-        throw new ApiError(400, "Note text is required");
+      if (!note || !note.trim()) throw new ApiError(400, "Note text is required");
 
       const Job = getJobModel();
       const Application = getApplicationModel();
@@ -739,15 +572,7 @@ class CandidateController {
       application.recruiterNotes.push(note.trim());
       await application.save();
 
-      res
-        .status(200)
-        .json(
-          new ApiResponse(
-            200,
-            { notes: application.recruiterNotes },
-            "Note added"
-          )
-        );
+      res.status(200).json(new ApiResponse(200, { notes: application.recruiterNotes }, "Note added"));
     } catch (error) {
       next(error);
     }
@@ -774,9 +599,7 @@ class CandidateController {
 
       await Application.findByIdAndDelete(id);
 
-      res
-        .status(200)
-        .json(new ApiResponse(200, { deleted: true }, "Application deleted"));
+      res.status(200).json(new ApiResponse(200, { deleted: true }, "Application deleted"));
     } catch (error) {
       next(error);
     }

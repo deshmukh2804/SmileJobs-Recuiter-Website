@@ -1,135 +1,79 @@
-// backend/src/services/profilePurchase/entitlementService.js
-// Manages (recruiter, candidate) unlock rows. Idempotent grants.
-// Also provides fast "which candidates has this recruiter unlocked?" lookups.
-
-const mongoose = require("mongoose");
-const ProfileEntitlement = require("../../models/profileEntitlementModel");
-const ApiError = require("../../utils/apiError");
+const mongoose = require('mongoose');
+const ProfileEntitlement = require('../../models/profileEntitlementModel');
 
 class EntitlementService {
-  /**
-   * Check if recruiter has active unlock for a single candidate.
-   */
   async hasEntitlement(recruiterId, candidateId) {
     if (!recruiterId || !candidateId) return false;
-    if (!mongoose.isValidObjectId(candidateId)) return false;
 
-    const row = await ProfileEntitlement.findOne({
-      recruiterId,
-      candidateId,
-      status: "active",
-    })
-      .select("_id")
-      .lean();
-    return !!row;
+    const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
+    const cId = typeof candidateId === 'string' ? new mongoose.Types.ObjectId(candidateId) : candidateId;
+
+    const entitlement = await ProfileEntitlement.findOne({
+      recruiterId: rId,
+      candidateId: cId,
+      status: 'active',
+    }).lean();
+
+    return !!entitlement;
   }
 
-  /**
-   * Returns Set<string> of candidateIds this recruiter has unlocked.
-   * Used by candidateController to overlay unlock flag on list responses.
-   */
-  async getUnlockedCandidateIdSet(recruiterId, candidateIds = null) {
+  async getUnlockedCandidateIdSet(recruiterId) {
     if (!recruiterId) return new Set();
 
-    const query = { recruiterId, status: "active" };
-    if (Array.isArray(candidateIds) && candidateIds.length > 0) {
-      query.candidateId = { $in: candidateIds };
-    }
-
-    const rows = await ProfileEntitlement.find(query)
-      .select("candidateId")
+    const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
+    const entitlements = await ProfileEntitlement.find({
+      recruiterId: rId,
+      status: 'active',
+    })
+      .select('candidateId')
       .lean();
-    return new Set(rows.map((r) => String(r.candidateId)));
+
+    return new Set(entitlements.map((e) => e.candidateId.toString()));
   }
 
-  /**
-   * Atomically grant unlocks for a list of candidateIds.
-   * Idempotent: if entitlement already exists, it is left untouched.
-   * Returns { granted: [...], alreadyOwned: [...] }
-   */
-  async grantEntitlements({
-    recruiterId,
-    candidateIds,
-    purchaseId,
-    unitPriceInPaise,
-    session = null,
-  }) {
-    if (!recruiterId) throw new ApiError(400, "recruiterId required");
-    if (!purchaseId) throw new ApiError(400, "purchaseId required");
-    if (!Array.isArray(candidateIds) || candidateIds.length === 0) {
-      throw new ApiError(400, "candidateIds must be a non-empty array");
-    }
+  async listEntitlements(recruiterId, options = {}) {
+    const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
+    const limit = options.limit || 100;
+    const skip = options.skip || 0;
 
-    const uniqueIds = [...new Set(candidateIds.map(String))];
-    const granted = [];
-    const alreadyOwned = [];
+    return await ProfileEntitlement.find({
+      recruiterId: rId,
+      status: 'active',
+    })
+      .sort({ grantedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+  }
 
-    for (const cid of uniqueIds) {
-      if (!mongoose.isValidObjectId(cid)) {
-        // Skip malformed IDs silently; purchase service pre-validates
-        continue;
-      }
+  async grantEntitlements({ recruiterId, candidateIds, pricePaidInPaise, currency, purchaseId }) {
+    if (!candidateIds || candidateIds.length === 0) return [];
 
-      try {
-        const doc = await ProfileEntitlement.findOneAndUpdate(
-          { recruiterId, candidateId: cid },
-          {
+    const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
+    const pId = purchaseId ? (typeof purchaseId === 'string' ? new mongoose.Types.ObjectId(purchaseId) : purchaseId) : null;
+
+    const operations = candidateIds.map((cId) => {
+      const candObjId = typeof cId === 'string' ? new mongoose.Types.ObjectId(cId) : cId;
+      return {
+        updateOne: {
+          filter: { recruiterId: rId, candidateId: candObjId },
+          update: {
             $setOnInsert: {
-              recruiterId,
-              candidateId: cid,
-              purchaseId,
-              status: "active",
+              recruiterId: rId,
+              candidateId: candObjId,
+              status: 'active',
+              pricePaidInPaise: pricePaidInPaise || 0,
+              currency: currency || 'INR',
               grantedAt: new Date(),
-              pricePaidInPaise: unitPriceInPaise,
+              purchaseId: pId,
             },
           },
-          {
-            upsert: true,
-            new: false, // returns pre-insert doc; null means it was newly created
-            setDefaultsOnInsert: true,
-            session,
-          }
-        ).lean();
+          upsert: true,
+        },
+      };
+    });
 
-        if (doc) {
-          alreadyOwned.push(cid);
-        } else {
-          granted.push(cid);
-        }
-      } catch (err) {
-        // Duplicate-key race (two parallel grants for same pair) → treat as alreadyOwned
-        if (err && err.code === 11000) {
-          alreadyOwned.push(cid);
-        } else {
-          throw err;
-        }
-      }
-    }
-
-    return { granted, alreadyOwned };
-  }
-
-  /**
-   * List all active entitlements for a recruiter (paginated).
-   */
-  async listEntitlements(recruiterId, { page = 1, limit = 50 } = {}) {
-    const skip = (Math.max(1, page) - 1) * limit;
-    const [items, total] = await Promise.all([
-      ProfileEntitlement.find({ recruiterId, status: "active" })
-        .sort({ grantedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      ProfileEntitlement.countDocuments({ recruiterId, status: "active" }),
-    ]);
-
-    return {
-      items,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return await ProfileEntitlement.bulkWrite(operations);
   }
 }
 

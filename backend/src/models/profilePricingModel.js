@@ -1,44 +1,62 @@
-// backend/src/models/profilePricingModel.js
-// READ-ONLY model pointing to careerflow_admin.profilepricings
-// Admin fully controls price. We never write to this collection.
-
-const mongoose = require("mongoose");
-const { getAdminConnection } = require("../config/db");
+const mongoose = require('mongoose');
+const { getAdminConnection } = require('../config/db');
 
 const profilePricingSchema = new mongoose.Schema(
   {
-    enabled: { type: Boolean, default: true },
-    price: { type: Number, required: true },           // display price (major unit)
-    priceInPaise: { type: Number, required: true },    // AUTHORITATIVE integer paise
-    currency: { type: String, default: "INR" },
-    minQuantity: { type: Number, default: 1 },
-    maxQuantity: { type: Number, default: 100 },
-    label: { type: String },
-    description: { type: String },
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    priceInPaise: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    currency: {
+      type: String,
+      default: 'INR',
+      uppercase: true,
+    },
+    minQuantity: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    maxQuantity: {
+      type: Number,
+      default: 100,
+      min: 1,
+    },
+    enabled: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    description: {
+      type: String,
+      default: 'Standard Candidate Profile Direct Unlock',
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
   },
   {
-    collection: "profilepricings",
-    strict: false,
     timestamps: true,
+    collection: 'profilepricings',
   }
 );
 
-let cachedModel = null;
-
 function getProfilePricingModel() {
-  if (cachedModel) return cachedModel;
   const adminConn = getAdminConnection();
-  if (!adminConn) {
-    throw new Error(
-      "[profilePricingModel] careerflow_admin connection not available"
-    );
+  if (adminConn.models.ProfilePricing) {
+    return adminConn.models.ProfilePricing;
   }
-  cachedModel = adminConn.model(
-    "ProfilePricing",
-    profilePricingSchema,
-    "profilepricings"
-  );
-  return cachedModel;
+  return adminConn.model('ProfilePricing', profilePricingSchema, 'profilepricings');
 }
 
-module.exports = getProfilePricingModel;
+module.exports = {
+  profilePricingSchema,
+  getProfilePricingModel,
+};
