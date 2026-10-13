@@ -8,17 +8,32 @@ const AVATAR_COLORS = ["#42326E", "#6E5B9A", "#C58A3A", "#5A6E8F", "#8A6E4F", "#
 
 // ═══════════════════════════════════════════════════════════════
 // RESUME PROXY URL BUILDER
-// Transforms raw Cloudinary resume URLs into proper proxy URLs
-// that stream validated PDF buffers with correct headers.
+// Resume proxy lives on the ADMIN backend (not the recruiter backend).
+// Admin endpoint: https://admin-api.smilejobs.in/api/profile/resume/view/:userId
+//
+// 🔧 FIX: Previous value "https://recruiter-api.smilejobs.in/api/v1"
+// produced broken URLs like:
+//   https://recruiter-api.smilejobs.in/api/v1/api/profile/resume/view/XYZ
+// which 404s because:
+//   (a) wrong host — recruiter backend has no resume endpoint
+//   (b) double "/api/v1" prefix stacked with "/api/..."
+//
+// New behavior:
+//   • Default base = admin backend host (no "/api/v1")
+//   • Auto-strip trailing "/api/v1" from env override if present
+//   • Trim trailing slashes
 // ═══════════════════════════════════════════════════════════════
-const APPLICATION_SERVICE_BASE_URL =
+const RESUME_PROXY_BASE_URL =
+  process.env.RESUME_PROXY_BASE_URL ||
   process.env.APPLICATION_SERVICE_URL ||
   process.env.APPLICATION_BACKEND_URL ||
-  "https://recruiter-api.smilejobs.in/api/v1";
+  "https://admin-api.smilejobs.in";
 
 const buildResumeProxyUrl = (userId) => {
   if (!userId) return "";
-  const base = APPLICATION_SERVICE_BASE_URL.replace(/\/+$/, "");
+  const base = RESUME_PROXY_BASE_URL
+    .replace(/\/+$/, "")        // strip trailing slash
+    .replace(/\/api\/v1$/i, ""); // strip "/api/v1" suffix if present
   return `${base}/api/profile/resume/view/${userId}`;
 };
 
@@ -259,6 +274,7 @@ class CandidateController {
       console.log("Resume Filename:", application.resumeFileName);
       console.log("Avatar URL:", application.candidateAvatarUrl);
       console.log("User ID (for proxy):", application.userId);
+      console.log("Resume Proxy Base URL:", RESUME_PROXY_BASE_URL);
       console.log("═══════════════════════════════════════════════");
 
       const job = await Job.findById(application.jobId).lean();
