@@ -6,7 +6,7 @@ const { protect } = require('../middleware/authMiddleware');
 // Public pricing route
 router.get('/pricing', profilePurchaseController.getPricing);
 
-// Protected routes (Require logged-in recruiter)
+// Protected routes (require recruiter login)
 router.use(protect);
 
 router.get('/quote', profilePurchaseController.getQuote);

@@ -78,11 +78,9 @@ class ProfilePurchaseController {
     try {
       const recruiterId = req.user._id || req.user.id;
       const recruiterEmail = req.user.email || '';
-      console.log(`[ProfilePurchaseController] getUnlockedProfiles called for ${recruiterId} (email: ${recruiterEmail})`);
       const result = await profilePurchaseService.getUnlockedProfilesWithAutoReveal(recruiterId, recruiterEmail);
       res.status(200).json({ success: true, data: result });
     } catch (error) {
-      console.error('[ProfilePurchaseController] getUnlockedProfiles error:', error);
       next(error);
     }
   }
@@ -101,8 +99,17 @@ class ProfilePurchaseController {
     try {
       const recruiterId = req.user._id || req.user.id;
       const { candidateId } = req.params;
-      const result = await profilePurchaseService.unlockCandidate(recruiterId, candidateId);
-      res.status(200).json({ success: true, data: { message: 'Resume access granted', candidateId } });
+      const streamInfo = await profilePurchaseService.getResumeStreamInfo(recruiterId, candidateId);
+
+      if (!streamInfo.resumeUrl) {
+        return res.status(404).json({ success: false, message: 'Resume document not available for this candidate' });
+      }
+
+      if (streamInfo.resumeUrl.startsWith('http://') || streamInfo.resumeUrl.startsWith('https://')) {
+        return res.redirect(streamInfo.resumeUrl);
+      }
+
+      return res.redirect(streamInfo.resumeUrl);
     } catch (error) {
       next(error);
     }
@@ -119,7 +126,7 @@ module.exports = {
   getCredits: controller.getCredits.bind(controller),
   unlockCandidate: controller.unlockCandidate.bind(controller),
   getUnlockedIds: controller.getUnlockedIds.bind(controller),
-  getUnlockedCandidateIds: controller.getUnlockedIds.bind(controller), // Alias to prevent any naming crashes
+  getUnlockedCandidateIds: controller.getUnlockedIds.bind(controller),
   getUnlockedProfiles: controller.getUnlockedProfiles.bind(controller),
   getPurchases: controller.getPurchases.bind(controller),
   downloadResume: controller.downloadResume.bind(controller),

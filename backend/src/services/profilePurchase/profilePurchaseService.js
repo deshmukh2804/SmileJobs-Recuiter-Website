@@ -1,9 +1,10 @@
 const mongoose = require('mongoose');
+const { getAdminConnection } = require('../../config/db');
 const ProfilePricing = require('../../models/profilePricingModel');
 const ProfilePurchase = require('../../models/profilePurchaseModel');
 const ProfileEntitlement = require('../../models/profileEntitlementModel');
 
-// ─── RecruiterCredit Model (inline fallback) ───
+// Ensure RecruiterCredit model
 let RecruiterCredit;
 try {
   RecruiterCredit = mongoose.model('RecruiterCredit');
@@ -11,37 +12,29 @@ try {
   try {
     RecruiterCredit = require('../../models/recruiterCreditModel');
   } catch (err) {
-    const recruiterCreditSchema = new mongoose.Schema(
+    const s = new mongoose.Schema(
       {
         recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
-        balance: { type: Number, default: 0, min: [0, 'Balance cannot be negative'] },
+        balance: { type: Number, default: 0, min: 0 },
         totalPurchased: { type: Number, default: 0 },
         totalExpended: { type: Number, default: 0 },
       },
-      { timestamps: true }
+      { timestamps: true, collection: 'recruiter_credits' }
     );
-    RecruiterCredit = mongoose.model('RecruiterCredit', recruiterCreditSchema);
+    RecruiterCredit = mongoose.model('RecruiterCredit', s);
   }
 }
 
-// ─── Admin User Model (bound to careerflow_admin.users) ───
-let AdminPoolUser = null;
+// Model bound to careerflow_admin.users collection
+let AdminUserModel = null;
 
-function getAdminUserModel() {
-  if (AdminPoolUser) return AdminPoolUser;
+function getAdminCandidateUserModel() {
+  if (AdminUserModel) return AdminUserModel;
 
-  const dbModule = require('../../config/db');
   let adminConn = null;
-
-  if (typeof dbModule.getAdminConnection === 'function') {
-    adminConn = dbModule.getAdminConnection();
-  } else if (dbModule.adminConnection) {
-    adminConn = dbModule.adminConnection;
-  } else if (dbModule.adminDB) {
-    adminConn = dbModule.adminDB;
-  }
-
-  if (!adminConn) {
+  try {
+    adminConn = getAdminConnection();
+  } catch (err) {
     for (const conn of mongoose.connections) {
       if (conn.name === 'careerflow_admin') {
         adminConn = conn;
@@ -54,21 +47,30 @@ function getAdminUserModel() {
     adminConn = mongoose;
   }
 
-  if (adminConn.models && adminConn.models.AdminPoolUser) {
-    AdminPoolUser = adminConn.models.AdminPoolUser;
-    return AdminPoolUser;
+  if (adminConn.models && adminConn.models.AdminCandidateUser) {
+    AdminUserModel = adminConn.models.AdminCandidateUser;
+    return AdminUserModel;
   }
 
-  const adminUserSchema = new mongoose.Schema({}, { timestamps: true, collection: 'users', strict: false });
-  AdminPoolUser = adminConn.model('AdminPoolUser', adminUserSchema);
-  return AdminPoolUser;
+  const adminCandidateUserSchema = new mongoose.Schema(
+    {},
+    {
+      timestamps: true,
+      collection: 'users',
+      strict: false,
+    }
+  );
+
+  AdminUserModel = adminConn.model('AdminCandidateUser', adminCandidateUserSchema);
+  return AdminUserModel;
 }
 
-// ─── Helper: Extract candidate data from raw document ───
+// Extract real candidate data cleanly
 function extractCandidateData(candidate) {
   if (!candidate) return null;
   const id = candidate._id ? candidate._id.toString() : '';
 
+  // Name extraction
   let name = candidate.name || candidate.fullName || '';
   if (!name && (candidate.firstName || candidate.lastName)) {
     name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim();
@@ -83,13 +85,25 @@ function extractCandidateData(candidate) {
     name = candidate.username || (candidate.email ? candidate.email.split('@')[0] : 'Verified Candidate');
   }
 
+  // Email extraction
   const email = candidate.email || candidate.personalInfo?.email || candidate.contact?.email || candidate.profile?.email || candidate.contactEmail || '';
 
-  const phone = candidate.phone || candidate.phoneNumber || candidate.mobile || candidate.mobileNumber ||
-    candidate.contactNumber || candidate.personalInfo?.phone || candidate.personalInfo?.phoneNumber ||
-    candidate.personalInfo?.mobile || candidate.contact?.phone || candidate.profile?.phone ||
-    candidate.profile?.phoneNumber || candidate.profile?.mobile || '';
+  // Phone extraction
+  const phone = candidate.phone ||
+    candidate.phoneNumber ||
+    candidate.mobile ||
+    candidate.mobileNumber ||
+    candidate.contactNumber ||
+    candidate.personalInfo?.phone ||
+    candidate.personalInfo?.phoneNumber ||
+    candidate.personalInfo?.mobile ||
+    candidate.contact?.phone ||
+    candidate.profile?.phone ||
+    candidate.profile?.phoneNumber ||
+    candidate.profile?.mobile ||
+    '';
 
+  // Resume extraction
   let resumeUrl = '';
   if (typeof candidate.resume === 'string' && candidate.resume.trim()) {
     resumeUrl = candidate.resume.trim();
@@ -109,10 +123,19 @@ function extractCandidateData(candidate) {
     resumeUrl = typeof candidate.personalInfo.resume === 'string' ? candidate.personalInfo.resume : (candidate.personalInfo.resume.url || '');
   }
 
-  const headline = candidate.headline || candidate.title || candidate.jobTitle || candidate.designation ||
-    candidate.profession || candidate.currentRole || candidate.profile?.headline || candidate.profile?.title ||
-    candidate.profile?.designation || 'Candidate';
+  // Headline extraction
+  const headline = candidate.headline ||
+    candidate.title ||
+    candidate.jobTitle ||
+    candidate.designation ||
+    candidate.profession ||
+    candidate.currentRole ||
+    candidate.profile?.headline ||
+    candidate.profile?.title ||
+    candidate.profile?.designation ||
+    'Candidate';
 
+  // Location extraction
   let location = 'Location not specified';
   if (typeof candidate.location === 'string' && candidate.location.trim()) {
     location = candidate.location.trim();
@@ -127,6 +150,7 @@ function extractCandidateData(candidate) {
     location = candidate.personalInfo.city;
   }
 
+  // Skills extraction
   let skills = [];
   if (Array.isArray(candidate.skills)) {
     skills = candidate.skills.map((s) => (typeof s === 'object' ? s.name || s.skill || '' : String(s))).filter(Boolean);
@@ -138,6 +162,7 @@ function extractCandidateData(candidate) {
     skills = candidate.profile.skills.map(String).filter(Boolean);
   }
 
+  // Experience
   let experience = '';
   if (candidate.totalExperience !== undefined && candidate.totalExperience !== null) {
     experience = `${candidate.totalExperience} years`;
@@ -149,6 +174,7 @@ function extractCandidateData(candidate) {
     experience = candidate.experience;
   }
 
+  // Education
   let education = '';
   if (Array.isArray(candidate.education) && candidate.education.length > 0) {
     education = candidate.education.map((e) => (typeof e === 'object' ? `${e.degree || e.course || ''} ${e.institution || e.college || ''}`.trim() : String(e))).filter(Boolean).join(', ');
@@ -156,19 +182,30 @@ function extractCandidateData(candidate) {
     education = candidate.education;
   }
 
+  // Avatar / Photo
   const profilePicture = candidate.profilePicture || candidate.avatar || candidate.photo || candidate.image ||
     candidate.profileImage || candidate.profile?.avatar || candidate.profile?.profilePicture || '';
 
   return {
-    _id: id, candidateId: id, name, email, phone,
-    hasResume: Boolean(resumeUrl), resumeUrl, headline, location,
-    skills, experience, education, profilePicture,
+    _id: id,
+    candidateId: id,
+    name,
+    email,
+    phone,
+    hasResume: Boolean(resumeUrl),
+    resumeUrl,
+    headline,
+    location,
+    skills,
+    experience,
+    education,
+    profilePicture,
     role: candidate.role || 'candidate',
   };
 }
 
-// ─── Helper: Check if a document is the recruiter themselves ───
-function isRecruiterSelf(doc, recruiterIdStr, recruiterEmail) {
+// Exclude recruiter self / employer accounts
+function isRecruiterOrAdmin(doc, recruiterIdStr, recruiterEmail) {
   if (!doc) return false;
   const docId = doc._id ? doc._id.toString() : '';
   const docEmail = (doc.email || '').toLowerCase().trim();
@@ -178,18 +215,24 @@ function isRecruiterSelf(doc, recruiterIdStr, recruiterEmail) {
   if (recEmail && docEmail && docEmail === recEmail) return true;
 
   const role = (doc.role || '').toLowerCase();
-  if (['admin', 'superadmin', 'recruiter', 'employer', 'company'].includes(role)) return true;
+  if (['admin', 'superadmin', 'recruiter', 'employer', 'company', 'organization'].includes(role)) {
+    return true;
+  }
 
   return false;
 }
 
 class ProfilePurchaseService {
-
   async getRecruiterCredits(recruiterId) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
     let credit = await RecruiterCredit.findOne({ recruiterId: rId });
     if (!credit) {
-      credit = await RecruiterCredit.create({ recruiterId: rId, balance: 0, totalPurchased: 0, totalExpended: 0 });
+      credit = await RecruiterCredit.create({
+        recruiterId: rId,
+        balance: 0,
+        totalPurchased: 0,
+        totalExpended: 0,
+      });
     }
     return credit;
   }
@@ -198,29 +241,36 @@ class ProfilePurchaseService {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
     const qty = parseInt(quantity, 10);
     if (isNaN(qty) || qty <= 0) throw new Error('Invalid credit quantity');
+
     const opts = session ? { session, new: true, upsert: true } : { new: true, upsert: true };
-    return await RecruiterCredit.findOneAndUpdate(
+    const updated = await RecruiterCredit.findOneAndUpdate(
       { recruiterId: rId },
       { $inc: { balance: qty, totalPurchased: qty } },
       opts
     );
+    return updated;
   }
 
   async spendCredits(recruiterId, quantity, session = null) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
     const qty = parseInt(quantity, 10);
     if (isNaN(qty) || qty <= 0) throw new Error('Invalid credit quantity to spend');
+
     const current = await RecruiterCredit.findOne({ recruiterId: rId });
     if (!current || current.balance < qty) {
       throw new Error(`Insufficient credits. Available: ${current ? current.balance : 0}, Required: ${qty}`);
     }
+
     const opts = session ? { session, new: true } : { new: true };
     const updated = await RecruiterCredit.findOneAndUpdate(
       { recruiterId: rId, balance: { $gte: qty } },
       { $inc: { balance: -qty, totalExpended: qty } },
       opts
     );
-    if (!updated) throw new Error('Credit deduction failed due to concurrent modification');
+
+    if (!updated) {
+      throw new Error('Credit deduction failed due to concurrent modification');
+    }
     return updated;
   }
 
@@ -239,13 +289,11 @@ class ProfilePurchaseService {
         };
       }
     } catch (err) {
-      console.warn('[ProfilePurchaseService] ProfilePricing query warning:', err.message);
+      console.warn('[ProfilePurchaseService] Pricing query warning:', err.message);
     }
 
-    // Direct native fallback to careerflow_admin.profilepricings
     try {
-      const dbModule = require('../../config/db');
-      const adminConn = typeof dbModule.getAdminConnection === 'function' ? dbModule.getAdminConnection() : dbModule.adminConnection;
+      const adminConn = getAdminConnection();
       if (adminConn && adminConn.db) {
         const rawPricing = await adminConn.db.collection('profilepricings').findOne({ enabled: true });
         if (rawPricing) {
@@ -261,10 +309,9 @@ class ProfilePurchaseService {
         }
       }
     } catch (nativeErr) {
-      console.warn('[ProfilePurchaseService] Native pricing query warning:', nativeErr.message);
+      console.warn('[ProfilePurchaseService] Native pricing fallback warning:', nativeErr.message);
     }
 
-    // Safe hardcoded default
     return {
       price: 2,
       priceInPaise: 200,
@@ -279,12 +326,16 @@ class ProfilePurchaseService {
   async getQuote(quantity) {
     const qty = parseInt(quantity, 10);
     if (isNaN(qty) || qty <= 0) throw new Error('Quantity must be a positive integer');
+
     const pricing = await this.getActivePricing();
     if (!pricing.enabled) throw new Error('Candidate profile purchases are currently disabled by administration');
+
     if (qty < pricing.minQuantity) throw new Error(`Minimum purchase quantity is ${pricing.minQuantity}`);
     if (qty > pricing.maxQuantity) throw new Error(`Maximum purchase quantity is ${pricing.maxQuantity}`);
+
     const unitPriceInPaise = pricing.priceInPaise || Math.round(pricing.price * 100);
     const totalAmountInPaise = unitPriceInPaise * qty;
+
     return {
       quantity: qty,
       unitPrice: pricing.price,
@@ -292,26 +343,41 @@ class ProfilePurchaseService {
       totalAmount: totalAmountInPaise / 100,
       totalAmountInPaise,
       currency: pricing.currency || 'INR',
-      pricingSnapshot: { price: pricing.price, priceInPaise: unitPriceInPaise, currency: pricing.currency || 'INR', description: pricing.description },
+      pricingSnapshot: {
+        price: pricing.price,
+        priceInPaise: unitPriceInPaise,
+        currency: pricing.currency || 'INR',
+        description: pricing.description,
+      },
     };
   }
 
   async createOrder(recruiterId, quantity) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
     const quote = await this.getQuote(quantity);
+
     const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
     const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
     let razorpayOrderId = `mock_order_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     if (razorpayKeyId && razorpayKeySecret && !razorpayKeyId.includes('dummy')) {
       try {
         const Razorpay = require('razorpay');
-        const razorpay = new Razorpay({ key_id: razorpayKeyId, key_secret: razorpayKeySecret });
+        const razorpay = new Razorpay({
+          key_id: razorpayKeyId,
+          key_secret: razorpayKeySecret,
+        });
+
         const rzpOrder = await razorpay.orders.create({
           amount: quote.totalAmountInPaise,
           currency: quote.currency,
           receipt: `rcpt_cr_${Date.now().toString().slice(-8)}`,
-          notes: { recruiterId: rId.toString(), quantity: String(quote.quantity), type: 'candidate_profile_credits' },
+          notes: {
+            recruiterId: rId.toString(),
+            quantity: String(quote.quantity),
+            type: 'candidate_profile_credits',
+          },
         });
         razorpayOrderId = rzpOrder.id;
       } catch (err) {
@@ -363,7 +429,11 @@ class ProfilePurchaseService {
     const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
     if (razorpayKeySecret && razorpaySignature && razorpayOrderId && razorpayPaymentId) {
       const crypto = require('crypto');
-      const expectedSignature = crypto.createHmac('sha256', razorpayKeySecret).update(`${razorpayOrderId}|${razorpayPaymentId}`).digest('hex');
+      const expectedSignature = crypto
+        .createHmac('sha256', razorpayKeySecret)
+        .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+        .digest('hex');
+
       if (expectedSignature !== razorpaySignature) {
         purchase.paymentStatus = 'failed';
         await purchase.save();
@@ -379,40 +449,87 @@ class ProfilePurchaseService {
 
     const updatedCredits = await this.grantCredits(rId, purchase.quantity);
     console.log(`[ProfilePurchaseService] ✅ Added ${purchase.quantity} credits to recruiter ${rId}. New balance: ${updatedCredits.balance}`);
-    return { success: true, purchase, credits: updatedCredits };
+
+    return {
+      success: true,
+      purchase,
+      credits: updatedCredits,
+    };
   }
 
   async unlockCandidate(recruiterId, candidateId) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
     const cId = typeof candidateId === 'string' ? new mongoose.Types.ObjectId(candidateId) : candidateId;
-    const existing = await ProfileEntitlement.findOne({ recruiterId: rId, candidateId: cId, status: 'active' });
+
+    const existing = await ProfileEntitlement.findOne({
+      recruiterId: rId,
+      candidateId: cId,
+      status: 'active',
+    });
+
     if (existing) {
       const credits = await this.getRecruiterCredits(rId);
       return { success: true, alreadyUnlocked: true, entitlement: existing, credits };
     }
+
     const updatedCredits = await this.spendCredits(rId, 1);
-    const entitlement = await ProfileEntitlement.create({ recruiterId: rId, candidateId: cId, status: 'active', unlockedAt: new Date() });
-    return { success: true, entitlement, credits: updatedCredits };
+
+    const entitlement = await ProfileEntitlement.create({
+      recruiterId: rId,
+      candidateId: cId,
+      status: 'active',
+      unlockedAt: new Date(),
+    });
+
+    return {
+      success: true,
+      entitlement,
+      credits: updatedCredits,
+    };
   }
 
+  /**
+   * Main Auto-Reveal Pipeline:
+   * 1. Connects directly to careerflow_admin.users collection
+   * 2. Checks recruiter's remaining credit balance
+   * 3. Cleans up any accidental self-entitlements (recruiter unlocking their own account)
+   * 4. Selects real candidates from careerflow_admin.users based on available credits
+   * 5. Automatically creates entitlements and deducts credits
+   * 6. Hydrates candidate profiles with verified email, phone, and resume download
+   */
   async getUnlockedProfilesWithAutoReveal(recruiterId, recruiterEmail) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
     const rIdStr = rId.toString();
     const rEmail = (recruiterEmail || '').toLowerCase().trim();
-    const AdminUser = getAdminUserModel();
 
-    let totalDocsInCollection = 0;
+    const AdminCandidateUser = getAdminCandidateUserModel();
+    let adminConn = null;
     try {
-      totalDocsInCollection = await AdminUser.countDocuments({});
-    } catch (diagErr) {
-      console.warn('[ProfilePurchase] Diagnostic count warning:', diagErr.message);
+      adminConn = getAdminConnection();
+    } catch (e) {
+      // ignore
     }
 
+    // 1. Diagnostic count in careerflow_admin.users
+    let totalInUsers = 0;
+    try {
+      if (adminConn && adminConn.db) {
+        totalInUsers = await adminConn.db.collection('users').countDocuments({});
+      } else {
+        totalInUsers = await AdminCandidateUser.countDocuments({});
+      }
+    } catch (err) {
+      console.warn('[ProfilePurchase] Count error in careerflow_admin.users:', err.message);
+    }
+
+    // 2. Fetch active entitlements
     let entitlements = await ProfileEntitlement.find({ recruiterId: rId, status: 'active' }).lean();
+
+    // 3. Check credits balance
     const creditDoc = await RecruiterCredit.findOne({ recruiterId: rId });
     let availableBalance = creditDoc ? creditDoc.balance : 0;
 
-    // Purge self-entitlements (recruiter's own account)
+    // 4. Purge accidental self-entitlements
     const validEntitlements = [];
     let refundedCount = 0;
 
@@ -420,10 +537,10 @@ class ProfilePurchaseService {
       const candIdStr = ent.candidateId ? ent.candidateId.toString() : '';
       let isSelf = candIdStr === rIdStr;
 
-      if (!isSelf && rEmail) {
+      if (!isSelf && rEmail && adminConn && adminConn.db) {
         try {
-          const candDoc = await AdminUser.findOne({ _id: ent.candidateId }).lean();
-          if (candDoc && isRecruiterSelf(candDoc, rIdStr, rEmail)) {
+          const candDoc = await adminConn.db.collection('users').findOne({ _id: ent.candidateId });
+          if (candDoc && isRecruiterOrAdmin(candDoc, rIdStr, rEmail)) {
             isSelf = true;
           }
         } catch (e) {
@@ -440,84 +557,114 @@ class ProfilePurchaseService {
     }
 
     if (refundedCount > 0) {
-      await RecruiterCredit.findOneAndUpdate({ recruiterId: rId }, { $inc: { balance: refundedCount, totalExpended: -refundedCount } });
+      await RecruiterCredit.findOneAndUpdate(
+        { recruiterId: rId },
+        { $inc: { balance: refundedCount, totalExpended: -refundedCount } }
+      );
       availableBalance += refundedCount;
-      console.log(`[ProfilePurchase] ↩️ Refunded ${refundedCount} self-entitlements for recruiter ${rIdStr}`);
+      console.log(`[ProfilePurchase] ↩️ Purged & refunded ${refundedCount} self-entitlements`);
     }
 
     entitlements = validEntitlements;
     const alreadyUnlockedIds = entitlements.map((e) => e.candidateId.toString());
 
-    // Auto-reveal real candidates if balance > 0
+    // 5. Auto-reveal candidates from careerflow_admin.users if recruiter has balance
     if (availableBalance > 0) {
+      console.log(`[ProfilePurchase] 🎯 Auto-revealing ${availableBalance} candidates from careerflow_admin.users for recruiter ${rIdStr}...`);
+
       const excludeObjIds = [...alreadyUnlockedIds, rIdStr]
         .filter((id) => mongoose.Types.ObjectId.isValid(id))
         .map((id) => new mongoose.Types.ObjectId(id));
 
       const candidateFilter = {
         _id: { $nin: excludeObjIds },
-        role: { $nin: ['admin', 'superadmin', 'recruiter', 'employer', 'company', 'Admin', 'Recruiter', 'Employer', 'SuperAdmin'] },
+        role: { $nin: ['admin', 'superadmin', 'recruiter', 'employer', 'company', 'organization', 'Admin', 'Recruiter', 'Employer'] },
       };
 
       if (rEmail) {
         candidateFilter.email = { $ne: rEmail };
       }
 
-      let randomCandidates = [];
+      let candidatePool = [];
 
-      try {
-        randomCandidates = await AdminUser.aggregate([
-          { $match: candidateFilter },
-          { $sample: { size: availableBalance } },
-        ]);
-      } catch (aggErr) {
-        // ignore
-      }
-
-      if (!randomCandidates || randomCandidates.length === 0) {
+      // Method A: Native Mongo Driver aggregation on careerflow_admin.users
+      if (adminConn && adminConn.db) {
         try {
-          randomCandidates = await AdminUser.find(candidateFilter).limit(availableBalance).lean();
-        } catch (findErr) {
-          // ignore
+          candidatePool = await adminConn.db
+            .collection('users')
+            .aggregate([{ $match: candidateFilter }, { $sample: { size: availableBalance } }])
+            .toArray();
+        } catch (aggErr) {
+          console.warn('[ProfilePurchase] Native aggregate error:', aggErr.message);
         }
-      }
 
-      if (!randomCandidates || randomCandidates.length === 0) {
-        try {
-          const dbModule = require('../../config/db');
-          const adminConn = typeof dbModule.getAdminConnection === 'function' ? dbModule.getAdminConnection() : dbModule.adminConnection;
-          if (adminConn && adminConn.db) {
-            randomCandidates = await adminConn.db.collection('users').find(candidateFilter).limit(availableBalance).toArray();
+        // Method B: Native find
+        if (!candidatePool || candidatePool.length === 0) {
+          try {
+            candidatePool = await adminConn.db
+              .collection('users')
+              .find(candidateFilter)
+              .limit(availableBalance)
+              .toArray();
+          } catch (findErr) {
+            console.warn('[ProfilePurchase] Native find error:', findErr.message);
           }
-        } catch (nativeErr) {
-          // ignore
         }
       }
 
-      // Filter out any recruiter accounts safely
-      if (randomCandidates && randomCandidates.length > 0) {
-        randomCandidates = randomCandidates.filter((c) => !isRecruiterSelf(c, rIdStr, rEmail));
-        const countToUnlock = Math.min(randomCandidates.length, availableBalance);
+      // Method C: Mongoose model on careerflow_admin
+      if (!candidatePool || candidatePool.length === 0) {
+        try {
+          candidatePool = await AdminCandidateUser.find(candidateFilter).limit(availableBalance).lean();
+        } catch (mErr) {
+          console.warn('[ProfilePurchase] Mongoose find error:', mErr.message);
+        }
+      }
+
+      // Method D: Broader search if strict role filter didn't match (any user except recruiter self)
+      if (!candidatePool || candidatePool.length === 0) {
+        try {
+          const broadFilter = { _id: { $nin: excludeObjIds } };
+          if (rEmail) broadFilter.email = { $ne: rEmail };
+
+          if (adminConn && adminConn.db) {
+            candidatePool = await adminConn.db.collection('users').find(broadFilter).limit(availableBalance).toArray();
+          } else {
+            candidatePool = await AdminCandidateUser.find(broadFilter).limit(availableBalance).lean();
+          }
+        } catch (broadErr) {
+          console.warn('[ProfilePurchase] Broad search error:', broadErr.message);
+        }
+      }
+
+      // Final safety filter: remove any remaining recruiter/admin self profiles
+      if (candidatePool && candidatePool.length > 0) {
+        candidatePool = candidatePool.filter((c) => !isRecruiterOrAdmin(c, rIdStr, rEmail));
+
+        const countToUnlock = Math.min(candidatePool.length, availableBalance);
 
         for (let i = 0; i < countToUnlock; i++) {
-          const candidate = randomCandidates[i];
+          const candidate = candidatePool[i];
+          const candId = candidate._id;
+
           try {
             await this.spendCredits(rId, 1);
-            const newEnt = await ProfileEntitlement.create({
+            const newEntitlement = await ProfileEntitlement.create({
               recruiterId: rId,
-              candidateId: candidate._id,
+              candidateId: candId,
               status: 'active',
               unlockedAt: new Date(),
             });
-            entitlements.push(newEnt.toObject ? newEnt.toObject() : newEnt);
+            entitlements.push(newEntitlement.toObject ? newEntitlement.toObject() : newEntitlement);
+            console.log(`[ProfilePurchase] 🔓 Auto-unlocked candidate ${candId} (${candidate.name || candidate.email})`);
           } catch (unlockErr) {
-            console.error(`[ProfilePurchase] Unlock error for ${candidate._id}:`, unlockErr.message);
+            console.error(`[ProfilePurchase] ❌ Error auto-unlocking candidate ${candId}:`, unlockErr.message);
           }
         }
       }
     }
 
-    // Hydrate unlocked candidate profiles
+    // 6. Hydrate all unlocked profiles from careerflow_admin.users
     const candidateIds = entitlements
       .map((e) => e.candidateId)
       .filter((id) => mongoose.Types.ObjectId.isValid(id))
@@ -525,21 +672,19 @@ class ProfilePurchaseService {
 
     let candidateDocs = [];
     if (candidateIds.length > 0) {
-      try {
-        candidateDocs = await AdminUser.find({ _id: { $in: candidateIds } }).lean();
-      } catch (fetchErr) {
-        // ignore
+      if (adminConn && adminConn.db) {
+        try {
+          candidateDocs = await adminConn.db.collection('users').find({ _id: { $in: candidateIds } }).toArray();
+        } catch (fetchErr) {
+          console.warn('[ProfilePurchase] Native candidate docs fetch warning:', fetchErr.message);
+        }
       }
 
       if (!candidateDocs || candidateDocs.length === 0) {
         try {
-          const dbModule = require('../../config/db');
-          const adminConn = typeof dbModule.getAdminConnection === 'function' ? dbModule.getAdminConnection() : dbModule.adminConnection;
-          if (adminConn && adminConn.db) {
-            candidateDocs = await adminConn.db.collection('users').find({ _id: { $in: candidateIds } }).toArray();
-          }
-        } catch (nativeFetchErr) {
-          // ignore
+          candidateDocs = await AdminCandidateUser.find({ _id: { $in: candidateIds } }).lean();
+        } catch (mFetchErr) {
+          console.warn('[ProfilePurchase] Mongoose candidate docs fetch warning:', mFetchErr.message);
         }
       }
     }
@@ -557,7 +702,9 @@ class ProfilePurchaseService {
       const rawCandidate = candidateMap.get(candIdStr);
 
       if (rawCandidate) {
-        if (isRecruiterSelf(rawCandidate, rIdStr, rEmail)) continue;
+        if (isRecruiterOrAdmin(rawCandidate, rIdStr, rEmail)) {
+          continue;
+        }
 
         const extracted = extractCandidateData(rawCandidate);
         profiles.push({
@@ -577,7 +724,7 @@ class ProfilePurchaseService {
       totalUnlocked: profiles.length,
       credits: finalCredits,
       _debug: {
-        totalInAdminUsersCollection: totalDocsInCollection,
+        totalInAdminUsersCollection: totalInUsers,
         recruiterEmail: rEmail,
         entitlementCount: entitlements.length,
         hydratedCount: profiles.length,
@@ -588,13 +735,44 @@ class ProfilePurchaseService {
 
   async getPurchases(recruiterId) {
     const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
-
     let purchases = await ProfilePurchase.find({ recruiterId: rId }).sort({ createdAt: -1 }).lean();
     if (!purchases || purchases.length === 0) {
       purchases = await ProfilePurchase.find({ recruiterId: rId.toString() }).sort({ createdAt: -1 }).lean();
     }
-
     return purchases || [];
+  }
+
+  async getResumeStreamInfo(recruiterId, candidateId) {
+    const rId = typeof recruiterId === 'string' ? new mongoose.Types.ObjectId(recruiterId) : recruiterId;
+    const cId = typeof candidateId === 'string' ? new mongoose.Types.ObjectId(candidateId) : candidateId;
+
+    const entitlement = await ProfileEntitlement.findOne({ recruiterId: rId, candidateId: cId, status: 'active' });
+    if (!entitlement) {
+      throw new Error('You have not unlocked this candidate profile yet');
+    }
+
+    let candDoc = null;
+    const adminConn = getAdminConnection();
+    if (adminConn && adminConn.db) {
+      candDoc = await adminConn.db.collection('users').findOne({ _id: cId });
+    }
+
+    if (!candDoc) {
+      const AdminCandidateUser = getAdminCandidateUserModel();
+      candDoc = await AdminCandidateUser.findOne({ _id: cId }).lean();
+    }
+
+    if (!candDoc) {
+      throw new Error('Candidate not found');
+    }
+
+    const extracted = extractCandidateData(candDoc);
+    return {
+      candidateId: cId.toString(),
+      name: extracted.name,
+      resumeUrl: extracted.resumeUrl,
+      hasResume: extracted.hasResume,
+    };
   }
 }
 
