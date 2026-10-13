@@ -563,13 +563,20 @@ class ProfilePurchaseService {
       }
     }
 
-    const purchase = await ProfilePurchase.create({
-      recruiterId: rId, quantity: quote.quantity,
-      unitPrice: quote.unitPrice, unitPriceInPaise: quote.unitPriceInPaise,
-      totalAmount: quote.totalAmount, totalAmountInPaise: quote.totalAmountInPaise,
-      totalAmountInRupees: quote.totalAmount, currency: quote.currency,
-      paymentStatus: 'pending', status: 'created',
-      razorpayOrderId, orderId: razorpayOrderId,
+      const purchase = await ProfilePurchase.create({
+      recruiterId: rId,
+      quantity: quote.quantity,
+      unitPrice: quote.unitPrice,
+      unitPriceInPaise: quote.unitPriceInPaise,
+      unitPriceInRupees: quote.unitPrice,
+      totalAmount: quote.totalAmount,
+      totalAmountInPaise: quote.totalAmountInPaise,
+      totalAmountInRupees: quote.totalAmount,
+      currency: quote.currency,
+      paymentStatus: 'pending',
+      status: 'created',
+      razorpayOrderId,
+      orderId: razorpayOrderId,
       pricingSnapshot: quote.pricingSnapshot,
     });
 
