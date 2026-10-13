@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AppRoute, Candidate, AuthUser } from '../types';
+import { AppRoute, Candidate, AuthUser, SubscriptionPlan } from '../types';
 import { INITIAL_CANDIDATES } from '../mockData';
+import { subscriptionService } from '../services/subscriptionService';
+import {
+  POLICIES,
+  BIZ,
+  fullAddress,
+  PolicyType,
+} from './landing/PolicyData';
 import {
   ShieldCheck,
   Search,
@@ -20,22 +27,15 @@ import {
   Mail,
   Phone,
   MapPinned,
-  FileText,
-  RefreshCw,
-  Truck,
-  HelpCircle,
   ChevronDown,
   ChevronUp,
   CreditCard,
-  Globe,
   AlertCircle,
+  Coins,
+  Unlock,
+  Download,
+  Loader2,
 } from 'lucide-react';
-
-
-// ═══════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════
-type PolicyType = 'privacy' | 'terms' | 'refund' | 'shipping' | 'contact' | null;
 
 interface LandingViewProps {
   onNavigate: (route: AppRoute) => void;
@@ -45,795 +45,8 @@ interface LandingViewProps {
   authUser: AuthUser | null;
 }
 
-
 // ═══════════════════════════════════════════════
-// BUSINESS INFO CONSTANT - RAZORPAY COMPLIANCE
-// ═══════════════════════════════════════════════
-const BIZ = {
-  legalName: 'Sachin Rohidas Gunjal',
-  brandName: 'Smile Jobs',
-  type: 'Individual (Proprietorship)',
-  address: {
-    line1: 'Mu Pimpaldari, Post Chas',
-    line2: 'Taluka Akole',
-    city: 'Ahmednagar',
-    state: 'Maharashtra',
-    pincode: '422610',
-    country: 'India (IN)',
-  },
-  email: 'info.smilejobs@gmail.com',
-  supportEmail: 'hr@smilejobs.in',
-  phone: '+91 9423168472',
-  website: 'https://www.smilejobs.in',
-  hours: 'Monday to Saturday, 10:00 AM – 7:00 PM IST',
-  effective: 'January 1, 2026',
-  updated: 'January 8, 2026',
-};
-
-const fullAddress = `${BIZ.address.line1}, ${BIZ.address.line2}, ${BIZ.address.city} – ${BIZ.address.pincode}, ${BIZ.address.state}, ${BIZ.address.country}`;
-
-
-// ═══════════════════════════════════════════════
-// POLICY DATA — ALL 5 RAZORPAY-REQUIRED POLICIES
-// ═══════════════════════════════════════════════
-
-interface PolicySection {
-  heading: string;
-  content: string;
-}
-
-interface PolicyData {
-  title: string;
-  icon: React.ReactNode;
-  effectiveDate?: string;
-  lastUpdated?: string;
-  intro: string;
-  sections: PolicySection[];
-}
-
-const POLICIES: Record<Exclude<PolicyType, null>, PolicyData> = {
-  privacy: {
-    title: 'Privacy Policy',
-    icon: <ShieldCheck className="w-6 h-6" />,
-    effectiveDate: BIZ.effective,
-    lastUpdated: BIZ.updated,
-    intro: `${BIZ.brandName} ("we", "our", "us"), operated by ${BIZ.legalName}, is committed to protecting the privacy and personal data of every user who accesses our recruitment platform. This Privacy Policy explains how we collect, use, store, share, and protect your information in compliance with applicable Indian data protection laws and Razorpay payment processing guidelines.`,
-    sections: [
-      {
-        heading: '1. Information We Collect',
-        content: `We collect the following categories of information when you use ${BIZ.brandName}:
-
-a) Personal Identification Information:
-• Full legal name, date of birth, gender
-• Email address and mobile phone number
-• Government-issued ID numbers (Aadhaar, PAN Card)
-• Postal address and current city of residence
-• Passport-size photograph (optional)
-
-b) Professional & Recruitment Information:
-• Resume / Curriculum Vitae (CV)
-• Work experience, employment history, and tenure details
-• Educational qualifications, degrees, and certifications
-• Technical skills, portfolio links, and code repositories
-• Salary expectations and current compensation details
-• Notice period and availability status
-
-c) Verification & Authentication Data:
-• UIDAI Aadhaar verification results (via OTP-based consent)
-• EPFO (Employees' Provident Fund Organisation) records for employment verification
-• Educational institution registrar confirmation data
-• Corporate domain email verification status
-• Phone carrier verification status
-
-d) Payment & Transaction Information:
-• Payment method selection (Card, UPI, Net Banking, Wallet)
-• Transaction IDs and payment confirmation receipts
-• Subscription plan and billing cycle details
-• Note: Full card numbers and CVV are NEVER stored on our servers. All payment data is processed exclusively through Razorpay's PCI-DSS Level 1 compliant payment gateway.
-
-e) Technical & Usage Data:
-• IP address, browser type, and version
-• Device type, operating system, and screen resolution
-• Pages visited, time spent, click patterns, and scroll depth
-• Referral source and campaign UTM parameters
-• Cookies and local storage identifiers
-
-f) Communication Data:
-• Messages exchanged between recruiters and candidates on the platform
-• Email notifications sent and received
-• Support tickets and help desk correspondence`,
-      },
-      {
-        heading: '2. How We Use Your Information',
-        content: `We use collected information strictly for the following legitimate purposes:
-
-• Account Creation & Authentication: To create, verify, and maintain your user account.
-• Candidate Verification: To authenticate identity, employment history, and educational credentials through authorised government and institutional databases.
-• Job Matching: To match verified candidate profiles with suitable job openings posted by recruiters.
-• Communication: To facilitate messaging between recruiters and candidates, send transactional emails, job alerts, and platform notifications.
-• Payment Processing: To process subscription payments, generate GST-compliant invoices, and manage billing through Razorpay.
-• Platform Improvement: To analyse usage patterns, improve user experience, fix bugs, and develop new features.
-• Legal Compliance: To comply with applicable Indian laws, tax regulations (7-year record retention under Income Tax Act), and respond to lawful government requests.
-• Fraud Prevention: To detect, prevent, and investigate fraudulent activities, fake profiles, and platform abuse.
-• Customer Support: To respond to your queries, complaints, and support requests.`,
-      },
-      {
-        heading: '3. Data Sharing & Disclosure',
-        content: `We share your personal data only in the following specific circumstances:
-
-a) With Verified Recruiters: Candidate profiles (name, skills, experience, verification status) are shared with recruiters who have active paid subscriptions on the platform. Sensitive data like Aadhaar numbers and PAN details are NEVER shared with recruiters.
-
-b) With Verification Partners: We share limited data with UIDAI, EPFO, and educational institutions solely for the purpose of credential verification, always with your explicit consent.
-
-c) With Payment Processor (Razorpay): Transaction-related data is shared with Razorpay Software Private Limited for secure payment processing. Razorpay's privacy policy applies to data they process. Visit https://razorpay.com/privacy/ for details.
-
-d) Legal Requirements: We may disclose data when required by Indian law, court order, government authority, or regulatory body (e.g., Income Tax Department, RBI, CERT-In).
-
-e) Business Transfers: In the event of a merger, acquisition, or sale of business assets, user data may be transferred to the successor entity with prior notice.
-
-f) With Your Consent: For any purpose not listed above, we will seek your explicit consent before sharing data.
-
-WE NEVER SELL, RENT, OR TRADE YOUR PERSONAL DATA TO THIRD PARTIES FOR MARKETING OR ADVERTISING PURPOSES.`,
-      },
-      {
-        heading: '4. Data Security Measures',
-        content: `We implement industry-standard security measures to protect your data:
-
-• 256-bit SSL/TLS encryption for all data transmitted between your browser and our servers
-• AES-256 encryption for sensitive data stored in our databases
-• Regular security audits and penetration testing by certified security professionals
-• Role-based access controls (RBAC) ensuring only authorised personnel can access user data
-• Two-factor authentication (2FA) available for all user accounts
-• Automatic session timeout after 30 minutes of inactivity
-• Daily encrypted backups stored in geographically redundant data centres
-• All payment data handled exclusively by Razorpay's PCI-DSS Level 1 compliant infrastructure
-• DDoS protection and Web Application Firewall (WAF) enabled
-• Incident response plan with 72-hour breach notification commitment`,
-      },
-      {
-        heading: '5. Data Retention',
-        content: `We retain your personal data for the following durations:
-
-• Active Account Data: Retained as long as your account remains active and you continue using the platform.
-• Inactive Accounts: If your account is inactive for 24 consecutive months, we will send a reactivation notice. If no response is received within 30 days, the account and associated data will be permanently deleted.
-• Transaction Records: Retained for 7 years from the date of transaction as required under the Indian Income Tax Act, 1961, and GST Act, 2017.
-• Verification Records: Retained for 5 years from the date of verification for audit trail purposes.
-• Communication Logs: Retained for 2 years from the date of communication.
-• Support Tickets: Retained for 3 years after resolution.
-
-You may request early deletion of your data at any time (subject to legal retention requirements) by emailing ${BIZ.email}.`,
-      },
-      {
-        heading: '6. Cookies & Tracking Technologies',
-        content: `We use cookies and similar tracking technologies to enhance your experience:
-
-a) Essential Cookies: Required for platform functionality (login sessions, security tokens). Cannot be disabled.
-b) Analytics Cookies: Help us understand usage patterns and improve the platform. Can be disabled in browser settings.
-c) Preference Cookies: Remember your settings, language, and display preferences.
-
-We do NOT use third-party advertising or remarketing cookies. You can control cookie preferences through your browser settings. Disabling essential cookies may affect platform functionality.`,
-      },
-      {
-        heading: '7. Your Rights',
-        content: `Under Indian data protection laws and our commitment to transparency, you have the following rights:
-
-• Right to Access: Request a copy of all personal data we hold about you.
-• Right to Correction: Request correction of inaccurate or incomplete information.
-• Right to Deletion: Request permanent deletion of your account and all associated data (subject to legal retention requirements).
-• Right to Withdraw Consent: Withdraw your consent for data processing at any time. Note: This may affect your ability to use certain platform features.
-• Right to Data Portability: Request your data in a structured, machine-readable format (JSON/CSV).
-• Right to Object: Object to specific processing activities.
-• Right to Complaint: Lodge a complaint with the relevant data protection authority.
-
-To exercise any of these rights, email us at ${BIZ.email} with the subject line "Data Rights Request". We will respond within 30 days.`,
-      },
-      {
-        heading: '8. Children\'s Privacy',
-        content: `${BIZ.brandName} is not intended for individuals under 18 years of age. We do not knowingly collect, process, or store personal data from minors. If we discover that a minor has created an account, we will immediately delete the account and all associated data. If you believe a minor is using our platform, please report it to ${BIZ.email}.`,
-      },
-      {
-        heading: '9. Third-Party Links',
-        content: `Our platform may contain links to third-party websites (e.g., company career pages, portfolio sites, LinkedIn profiles). We are not responsible for the privacy practices of these external sites. We encourage you to read their privacy policies before providing any personal information.`,
-      },
-      {
-        heading: '10. International Data Transfers',
-        content: `Your data is primarily stored and processed in India. If any data is transferred to servers located outside India (e.g., for backup or CDN purposes), we ensure that adequate safeguards are in place in compliance with applicable Indian data protection regulations.`,
-      },
-      {
-        heading: '11. Changes to This Privacy Policy',
-        content: `We may update this Privacy Policy from time to time to reflect changes in our practices, technology, or legal requirements. When we make material changes:
-
-• We will update the "Last Updated" date at the top of this policy.
-• We will notify registered users via email at least 7 days before changes take effect.
-• Continued use of the platform after the effective date constitutes acceptance of the updated policy.
-
-We encourage you to review this policy periodically.`,
-      },
-      {
-        heading: '12. Grievance Officer & Contact',
-        content: `For any privacy-related questions, concerns, or grievances, please contact:
-
-Grievance Officer: ${BIZ.legalName}
-Email: ${BIZ.email}
-Phone: ${BIZ.phone}
-Address: ${fullAddress}
-
-Support Email: ${BIZ.supportEmail}
-Support Hours: ${BIZ.hours}
-
-We will acknowledge your grievance within 24 hours and resolve it within 30 days as per applicable Indian law.`,
-      },
-    ],
-  },
-
-
-  terms: {
-    title: 'Terms and Conditions',
-    icon: <FileText className="w-6 h-6" />,
-    effectiveDate: BIZ.effective,
-    lastUpdated: BIZ.updated,
-    intro: `These Terms and Conditions ("Terms") govern your access to and use of ${BIZ.brandName} ("Platform"), operated by ${BIZ.legalName}. By creating an account, accessing, or using any part of the Platform, you acknowledge that you have read, understood, and agree to be bound by these Terms. If you do not agree, please do not use our services.`,
-    sections: [
-      {
-        heading: '1. Definitions',
-        content: `For the purposes of these Terms:
-
-• "Platform" refers to the ${BIZ.brandName} website, mobile application, and all associated digital services.
-• "User" refers to any individual or entity that accesses or uses the Platform, including Candidates and Recruiters.
-• "Candidate" refers to a job seeker who creates a profile on the Platform.
-• "Recruiter" refers to a hiring manager, HR professional, or company representative who uses the Platform to find and hire candidates.
-• "Services" refers to all features, tools, and functionalities offered through the Platform.
-• "Content" refers to all text, images, data, profiles, job listings, and other materials uploaded to or generated on the Platform.
-• "Subscription" refers to a paid plan that grants access to premium features.
-• "We/Us/Our" refers to ${BIZ.legalName}, operating as ${BIZ.brandName}.`,
-      },
-      {
-        heading: '2. Eligibility',
-        content: `To use ${BIZ.brandName}, you must:
-
-• Be at least 18 years of age.
-• Be legally competent to enter into a binding contract under the Indian Contract Act, 1872.
-• Provide accurate, truthful, and complete information during registration.
-• Not have been previously suspended or removed from the Platform for Terms violations.
-
-By using the Platform, you represent and warrant that you meet all eligibility requirements.`,
-      },
-      {
-        heading: '3. Account Registration & Security',
-        content: `• You must register an account to access most Platform features.
-• You agree to provide accurate, current, and complete information during registration and keep it updated.
-• You are solely responsible for maintaining the confidentiality of your account credentials (email, password, OTP).
-• You must not share your account with any other individual or entity.
-• You agree to immediately notify us at ${BIZ.email} of any unauthorised use of your account.
-• We reserve the right to suspend or terminate accounts with false, misleading, or duplicate information.
-• You are responsible for all activities that occur under your account.`,
-      },
-      {
-        heading: '4. Services Offered',
-        content: `${BIZ.brandName} provides the following digital services:
-
-For Candidates (Free):
-• Create verified professional profiles
-• Upload resume, portfolio, and skill documentation
-• Receive job match notifications
-• Communicate with verified recruiters
-• Access interview scheduling tools
-
-For Recruiters (Subscription-based):
-• Post job listings with detailed requirements
-• Search and filter verified candidate profiles
-• Access candidate verification reports
-• Manage hiring pipeline with Kanban board
-• Schedule interviews with calendar integration
-• Access recruitment analytics and conversion metrics
-
-All services are delivered digitally through our online platform. No physical products are shipped or delivered.`,
-      },
-      {
-        heading: '5. Payment Terms & Billing',
-        content: `• All payments are processed securely through Razorpay Software Private Limited.
-• Subscription fees are billed in advance on a monthly or annual basis as per the selected plan.
-• All prices are quoted in Indian Rupees (INR) and are inclusive of applicable Goods and Services Tax (GST).
-• Payment confirmation and GST-compliant invoices are sent to your registered email upon successful transaction.
-• We accept the following payment methods via Razorpay: Credit Cards (Visa, Mastercard, RuPay, Amex), Debit Cards, Net Banking, UPI (Google Pay, PhonePe, Paytm), and Mobile Wallets.
-• Failed payments may result in temporary suspension of premium features until payment is successfully processed.
-• Recurring subscriptions will auto-renew unless cancelled before the next billing cycle.
-• All billing disputes must be raised within 15 days of the transaction date.`,
-      },
-      {
-        heading: '6. User Conduct & Prohibited Activities',
-        content: `You agree NOT to:
-
-• Post false, misleading, defamatory, or fraudulent information on the Platform.
-• Create fake profiles, impersonate another person or entity, or misrepresent your qualifications.
-• Upload offensive, obscene, discriminatory, or illegal content.
-• Harass, threaten, stalk, or discriminate against other users based on race, gender, religion, caste, disability, or any protected characteristic.
-• Use the Platform for any purpose that violates Indian law or any applicable international law.
-• Attempt to hack, reverse-engineer, decompile, or compromise Platform security.
-• Use automated bots, scrapers, or crawlers to extract data without written authorisation.
-• Send unsolicited messages, spam, or bulk communications through the Platform.
-• Share your account credentials with third parties.
-• Post job listings that violate Indian labour laws, including discriminatory requirements.
-• Circumvent payment mechanisms or attempt to access premium features without a valid subscription.
-• Use the Platform to collect personal data of users for purposes unrelated to recruitment.
-
-Violation of any of these terms may result in immediate account suspension or permanent termination without refund.`,
-      },
-      {
-        heading: '7. Intellectual Property Rights',
-        content: `a) Platform IP: All content on ${BIZ.brandName}, including but not limited to the logo, brand name, UI/UX design, source code, algorithms, text, graphics, icons, and software, is the exclusive property of ${BIZ.legalName} and is protected under the Indian Copyright Act, 1957, and the Trademarks Act, 1999. Unauthorised reproduction, distribution, or modification is strictly prohibited.
-
-b) User Content: You retain ownership of content you upload (resumes, photos, portfolios). By uploading content, you grant ${BIZ.brandName} a non-exclusive, worldwide, royalty-free licence to use, display, store, and distribute your content solely for the purpose of providing Platform services.
-
-c) Recruiter Content: Job listings and company information uploaded by recruiters remain their intellectual property. We may display this content on the Platform and in email notifications.`,
-      },
-      {
-        heading: '8. Verification Services Disclaimer',
-        content: `• ${BIZ.brandName} verifies candidate credentials through authorised channels including UIDAI (Aadhaar), EPFO, and educational institution registrars.
-• While we strive for maximum accuracy, we cannot guarantee 100% accuracy of third-party verification results.
-• Verification results are provided "as-is" based on data received from government and institutional sources.
-• Recruiters are strongly advised to conduct their own independent due diligence before making hiring decisions.
-• ${BIZ.brandName} is not liable for any hiring decisions made based on verification reports provided through the Platform.`,
-      },
-      {
-        heading: '9. Limitation of Liability',
-        content: `To the maximum extent permitted by applicable Indian law:
-
-• ${BIZ.brandName} is provided on an "as-is" and "as-available" basis.
-• We do not warrant uninterrupted, error-free, or secure access to the Platform at all times.
-• We are not liable for any direct, indirect, incidental, special, consequential, or punitive damages arising from your use of the Platform.
-• We are not responsible for the accuracy of information provided by third-party verification partners.
-• We are not liable for disputes between recruiters and candidates, including but not limited to hiring decisions, salary negotiations, or employment terms.
-• Our total aggregate liability for any claim shall not exceed the total subscription fees paid by you in the 3 months immediately preceding the claim.
-• We are not responsible for losses arising from unauthorised access to your account due to your failure to maintain credential security.`,
-      },
-      {
-        heading: '10. Indemnification',
-        content: `You agree to indemnify, defend, and hold harmless ${BIZ.legalName} (operating as ${BIZ.brandName}), its officers, employees, and agents from and against any and all claims, liabilities, damages, losses, costs, and expenses (including reasonable legal fees) arising from:
-
-• Your use of or conduct on the Platform.
-• Your violation of these Terms.
-• Your violation of any third-party rights (including intellectual property rights).
-• Any content you upload or share on the Platform.
-• Any misrepresentation of your qualifications, identity, or credentials.`,
-      },
-      {
-        heading: '11. Account Suspension & Termination',
-        content: `a) By You: You may deactivate or delete your account at any time through account settings or by emailing ${BIZ.email}.
-
-b) By Us: We reserve the right to suspend or permanently terminate your account, without prior notice, for:
-• Violation of these Terms or any applicable policy.
-• Fraudulent, abusive, or illegal activity.
-• Non-payment of subscription fees beyond 7 days of the due date.
-• Creating multiple accounts or impersonating another user.
-• Any activity that threatens the security or integrity of the Platform.
-
-c) Effect of Termination:
-• Access to all Platform features will be immediately revoked.
-• Active subscription fees are non-refundable upon termination for Terms violation.
-• Your data will be handled as per our Privacy Policy and Data Retention guidelines.
-• We may retain certain data as required by Indian law.`,
-      },
-      {
-        heading: '12. Dispute Resolution & Governing Law',
-        content: `• These Terms are governed by and construed in accordance with the laws of India.
-• Any dispute arising out of or in connection with these Terms shall first be attempted to be resolved through amicable negotiation within 30 days.
-• If negotiation fails, the dispute shall be referred to arbitration under the Arbitration and Conciliation Act, 1996, with a sole arbitrator appointed mutually.
-• The seat and venue of arbitration shall be Ahmednagar, Maharashtra, India.
-• The language of arbitration shall be English.
-• The courts in Ahmednagar, Maharashtra shall have exclusive jurisdiction over any legal proceedings.`,
-      },
-      {
-        heading: '13. Force Majeure',
-        content: `${BIZ.brandName} shall not be liable for any failure or delay in performing its obligations due to circumstances beyond its reasonable control, including but not limited to: natural disasters, pandemics, government actions, internet outages, power failures, server crashes, cyberattacks, or acts of war or terrorism.`,
-      },
-      {
-        heading: '14. Severability',
-        content: `If any provision of these Terms is found to be invalid, illegal, or unenforceable by a court of competent jurisdiction, the remaining provisions shall continue in full force and effect.`,
-      },
-      {
-        heading: '15. Entire Agreement',
-        content: `These Terms, together with our Privacy Policy, Refund Policy, and Shipping Policy, constitute the entire agreement between you and ${BIZ.brandName} regarding your use of the Platform, superseding any prior agreements or understandings.`,
-      },
-      {
-        heading: '16. Modifications to Terms',
-        content: `We reserve the right to modify these Terms at any time. Material changes will be:
-• Posted on this page with an updated "Last Updated" date.
-• Communicated to registered users via email at least 7 days before taking effect.
-• Continued use of the Platform after the effective date constitutes your acceptance of the modified Terms.`,
-      },
-      {
-        heading: '17. Contact Information',
-        content: `For questions about these Terms, contact:
-
-${BIZ.legalName}
-Business: ${BIZ.brandName}
-Email: ${BIZ.email}
-Support: ${BIZ.supportEmail}
-Phone: ${BIZ.phone}
-Address: ${fullAddress}
-Support Hours: ${BIZ.hours}`,
-      },
-    ],
-  },
-
-
-  refund: {
-    title: 'Refund & Cancellation Policy',
-    icon: <RefreshCw className="w-6 h-6" />,
-    effectiveDate: BIZ.effective,
-    lastUpdated: BIZ.updated,
-    intro: `This Refund and Cancellation Policy outlines the terms under which ${BIZ.legalName}, operating as ${BIZ.brandName}, handles refund requests, subscription cancellations, and billing disputes. We aim to be fair and transparent in all our refund dealings. All payments on ${BIZ.brandName} are processed through Razorpay Software Private Limited.`,
-    sections: [
-      {
-        heading: '1. Subscription Plans & Billing',
-        content: `${BIZ.brandName} offers the following subscription plans for recruiters:
-
-• Starter Plan: ₹2,499/month
-• Professional Plan: ₹7,499/month
-• Enterprise Plan: Custom pricing
-
-All prices are in Indian Rupees (INR) and include applicable GST (18%). Candidate accounts are free of charge and do not require any payment.
-
-Subscriptions are billed in advance at the beginning of each billing cycle (monthly or annual). GST-compliant invoices are generated and emailed automatically upon successful payment.`,
-      },
-      {
-        heading: '2. Subscription Cancellation',
-        content: `You may cancel your subscription at any time using the following methods:
-
-a) Self-Service: Through your Account Settings > Subscription > Cancel Plan.
-b) Email Request: Send a cancellation request to ${BIZ.email} from your registered email address.
-c) Phone: Call us at ${BIZ.phone} during support hours.
-
-Cancellation Terms:
-• Cancellation takes effect at the END of your current paid billing cycle.
-• You will continue to have access to all premium features until the billing period expires.
-• No partial refunds are provided for the remaining days in the current billing cycle.
-• Auto-renewal will be disabled immediately upon cancellation.
-• You can reactivate your subscription at any time by choosing a new plan.
-• Cancellation of annual plans follows the same policy — access continues until the annual period expires.`,
-      },
-      {
-        heading: '3. Refund Eligibility',
-        content: `Refunds MAY be approved under the following circumstances:
-
-a) Technical Failure: If a verified platform-side technical issue prevented you from accessing paid features for more than 72 continuous hours during your billing cycle.
-
-b) Duplicate Payment: If you were charged twice for the same billing cycle due to a payment processing error.
-
-c) Billing Error: If you were charged an incorrect amount different from your plan price.
-
-d) Unauthorised Transaction: If a payment was made from your account without your authorisation (subject to investigation and verification).
-
-e) Service Not Activated: If your premium features were not activated within 24 hours of successful payment despite raising a support ticket.
-
-Refunds will NOT be provided for:
-• Change of mind or decision not to use the service after purchase.
-• Failure to use subscribed features during the billing period.
-• Account suspension or termination due to violation of Terms and Conditions.
-• Dissatisfaction with candidate quality or hiring outcomes.
-• Downtime caused by scheduled maintenance (communicated in advance).
-• Third-party service failures beyond our control (e.g., Razorpay downtime, internet issues).
-• Promotional, discounted, or trial subscriptions.
-• Services used for more than 7 days from the purchase date.`,
-      },
-      {
-        heading: '4. Refund Request Process',
-        content: `To request a refund, follow these steps:
-
-Step 1: Email us at ${BIZ.email} within 7 calendar days of the transaction date.
-
-Step 2: Include the following information in your email:
-  • Subject line: "Refund Request – [Your Registered Email]"
-  • Full name as registered on the platform
-  • Registered email address
-  • Transaction ID / Payment Reference Number
-  • Date of transaction
-  • Amount charged
-  • Detailed reason for refund request
-  • Screenshots of error (if applicable)
-
-Step 3: Our billing team will acknowledge your request within 24 hours (business days).
-
-Step 4: Investigation and review will be completed within 3–5 business days.
-
-Step 5: You will be notified of the decision (approved/rejected) via email with detailed reasoning.
-
-Step 6: If approved, the refund will be initiated within 2 business days of approval.`,
-      },
-      {
-        heading: '5. Refund Processing Timeline',
-        content: `Once a refund is approved, the processing time depends on your original payment method:
-
-• Credit Cards: 7–10 business days
-• Debit Cards: 7–10 business days
-• Net Banking: 5–7 business days
-• UPI (Google Pay, PhonePe, Paytm): 3–5 business days
-• Mobile Wallets: 3–5 business days
-• International Cards: 10–14 business days
-
-Important Notes:
-• Refunds are always credited to the ORIGINAL payment method used for the transaction.
-• We cannot process refunds to a different bank account, card, or payment method.
-• Actual credit time may vary depending on your bank's or payment provider's processing schedule.
-• You will receive an email confirmation with the Razorpay refund reference ID once the refund is initiated.
-• For refund status queries, contact Razorpay support or email us at ${BIZ.email}.`,
-      },
-      {
-        heading: '6. Partial Refunds',
-        content: `In exceptional circumstances, we may offer partial refunds at our sole discretion. Partial refund calculation considers:
-
-• Number of days the service was actively used vs. total billing period
-• Features accessed during the subscription period
-• Nature and severity of the issue reported
-• Whether the issue was within our control
-
-Partial refund decisions are final and are communicated with a detailed breakdown.`,
-      },
-      {
-        heading: '7. Non-Refundable Items',
-        content: `The following are strictly non-refundable under any circumstances:
-
-• Premium candidate profile boost charges (once the boost is activated)
-• Verification charges (once the verification process is initiated with third-party agencies)
-• One-time account setup or onboarding fees (if applicable)
-• Promotional, discounted, or special offer subscriptions
-• Services consumed for more than 7 calendar days
-• Annual plan subscriptions after 14 calendar days from purchase
-• Add-on features purchased separately
-• Custom enterprise solutions after project initiation`,
-      },
-      {
-        heading: '8. Chargeback Policy',
-        content: `• We strongly request that you contact us at ${BIZ.email} BEFORE initiating a chargeback or dispute with your bank or card issuer.
-• Unauthorised or fraudulent chargebacks may result in immediate and permanent account suspension.
-• We will provide complete transaction evidence (payment receipts, service delivery proof, communication logs) to Razorpay and the issuing bank in case of disputes.
-• Legitimate chargeback cases will be honoured as per Razorpay's dispute resolution guidelines and RBI regulations.
-• If a chargeback is found to be invalid, we reserve the right to recover the disputed amount plus any chargeback fees incurred.`,
-      },
-      {
-        heading: '9. Plan Downgrades',
-        content: `• You may downgrade your subscription plan at any time.
-• The downgrade takes effect at the start of the next billing cycle.
-• No refund or credit is provided for the price difference in the current billing period.
-• Feature access will be adjusted according to the new plan's entitlements.
-• Any data exceeding the new plan's limits (e.g., active job postings) will be archived, not deleted.`,
-      },
-      {
-        heading: '10. Free Trial Policy',
-        content: `• Some plans may offer a free trial period (typically 7 or 14 days).
-• No payment is required during the trial period.
-• At the end of the trial, you will be prompted to choose a paid plan.
-• If no plan is selected, your account reverts to the free tier — no charges are applied.
-• Free trials are limited to one per user/email address/organisation.`,
-      },
-      {
-        heading: '11. Contact for Refund Queries',
-        content: `For all refund and billing-related queries:
-
-Name: ${BIZ.legalName}
-Business: ${BIZ.brandName}
-Email: ${BIZ.email}
-Support: ${BIZ.supportEmail}
-Phone: ${BIZ.phone}
-Support Hours: ${BIZ.hours}
-
-Registered Address:
-${BIZ.address.line1}
-${BIZ.address.line2}
-${BIZ.address.city} – ${BIZ.address.pincode}
-${BIZ.address.state}, ${BIZ.address.country}
-
-Payment Partner: Razorpay Software Private Limited
-Razorpay Support: https://razorpay.com/support/`,
-      },
-    ],
-  },
-
-
-  shipping: {
-    title: 'Shipping & Delivery Policy',
-    icon: <Truck className="w-6 h-6" />,
-    effectiveDate: BIZ.effective,
-    lastUpdated: BIZ.updated,
-    intro: `${BIZ.brandName}, operated by ${BIZ.legalName}, is a 100% digital recruitment platform. We do not sell, ship, or deliver any physical products or goods. All our services are delivered electronically through our online platform. This Shipping & Delivery Policy is provided for transparency and compliance with Razorpay's payment gateway requirements.`,
-    sections: [
-      {
-        heading: '1. Nature of Services',
-        content: `${BIZ.brandName} is a Software-as-a-Service (SaaS) recruitment platform. All services are digital in nature and include:
-
-• Verified candidate profile creation and management
-• Job posting and publishing
-• Candidate search and filtering tools
-• Recruitment pipeline management (Kanban board)
-• Interview scheduling and calendar integration
-• Recruitment analytics and reporting
-• Communication tools between recruiters and candidates
-• Credential verification services
-
-No physical products, materials, or goods are involved in any transaction on our platform.`,
-      },
-      {
-        heading: '2. Digital Service Delivery',
-        content: `Upon successful payment, digital services are delivered as follows:
-
-a) Subscription Activation:
-• Premium subscription features are activated INSTANTLY upon successful payment confirmation from Razorpay.
-• In rare cases of payment gateway delays, activation may take up to 30 minutes.
-• If features are not activated within 1 hour of payment, please contact ${BIZ.email} with your transaction ID.
-
-b) Account Access:
-• Account registration confirmation email is sent within 2 minutes of successful sign-up.
-• Login credentials are delivered to your registered email address.
-• Check your spam/junk folder if you don't receive the email.
-
-c) Verification Services:
-• Candidate verification requests are initiated within 24 hours of submission.
-• Verification results are typically available within 2–5 business days, depending on the verification type and third-party response time.
-
-d) Job Posting:
-• Job listings go live within 15 minutes of submission after automated content review.
-• Featured/boosted listings are activated immediately upon payment.`,
-      },
-      {
-        heading: '3. Service Availability',
-        content: `• The platform is available 24 hours a day, 7 days a week, subject to scheduled and unscheduled maintenance.
-• Scheduled maintenance windows are communicated at least 48 hours in advance via email and in-app notification.
-• We target 99.5% uptime availability across all services.
-• The platform is accessible via any modern web browser (Chrome, Firefox, Safari, Edge) on desktop, tablet, and mobile devices.
-• No software download or installation is required.`,
-      },
-      {
-        heading: '4. Service Delivery Confirmation',
-        content: `You will receive the following confirmations upon service delivery:
-
-• Payment Receipt: Emailed immediately after successful payment with transaction ID, amount, and GST details.
-• Subscription Confirmation: Email confirming your plan, features, billing cycle, and next renewal date.
-• Invoice: GST-compliant tax invoice emailed within 24 hours of payment.
-• Feature Activation: In-app notification confirming premium features are active.
-
-All confirmations are sent to your registered email address. Please ensure your email address is correct and up to date.`,
-      },
-      {
-        heading: '5. Delivery Issues & Troubleshooting',
-        content: `If you experience any issues with service delivery:
-
-a) Subscription Not Activated:
-• Wait 30 minutes and refresh the page.
-• Log out and log back in.
-• Check your payment status in Account Settings > Billing.
-• If the issue persists, email ${BIZ.email} with your transaction ID.
-
-b) Email Not Received:
-• Check your spam, junk, and promotions folders.
-• Add ${BIZ.email} to your contacts/whitelist.
-• Verify your registered email address in Account Settings.
-
-c) Platform Access Issues:
-• Clear your browser cache and cookies.
-• Try a different browser or device.
-• Disable browser extensions that may interfere.
-• Check your internet connection.
-
-d) Verification Delays:
-• Verification timelines depend on third-party response times.
-• You will be notified via email once verification is complete.
-• For status updates, email ${BIZ.email}.`,
-      },
-      {
-        heading: '6. No Physical Shipping',
-        content: `To reiterate for absolute clarity:
-
-• ${BIZ.brandName} does NOT ship any physical products.
-• No courier, postal, or logistics services are involved.
-• No shipping charges, delivery fees, or handling costs apply.
-• There is no physical delivery address required from users.
-• All services are 100% digital and delivered electronically.`,
-      },
-      {
-        heading: '7. Contact for Delivery Issues',
-        content: `For any service delivery queries or issues:
-
-Name: ${BIZ.legalName}
-Business: ${BIZ.brandName}
-Email: ${BIZ.email}
-Support: ${BIZ.supportEmail}
-Phone: ${BIZ.phone}
-Support Hours: ${BIZ.hours}
-
-Registered Address:
-${fullAddress}`,
-      },
-    ],
-  },
-
-
-  contact: {
-    title: 'Contact Us',
-    icon: <HelpCircle className="w-6 h-6" />,
-    intro: `We're here to help! Whether you have questions about our platform, need technical support, want to report an issue, or have feedback, our team is ready to assist you. Below are all the ways you can reach us.`,
-    sections: [
-      {
-        heading: 'Business Information',
-        content: `Legal Entity: ${BIZ.legalName}
-Business Name: ${BIZ.brandName}
-Business Type: ${BIZ.type}
-Website: ${BIZ.website}`,
-      },
-      {
-        heading: 'Registered Address',
-        content: `${BIZ.legalName}
-${BIZ.address.line1}
-${BIZ.address.line2}
-${BIZ.address.city} – ${BIZ.address.pincode}
-${BIZ.address.state}
-${BIZ.address.country}`,
-      },
-      {
-        heading: 'Email Contacts',
-        content: `General Inquiries & Billing: ${BIZ.email}
-HR & Recruitment Support: ${BIZ.supportEmail}
-
-For faster resolution, please include:
-• Your registered email address
-• A clear description of your issue
-• Screenshots (if applicable)
-• Transaction ID (for billing queries)`,
-      },
-      {
-        heading: 'Phone Support',
-        content: `Phone: ${BIZ.phone}
-Support Hours: ${BIZ.hours}
-Language: English, Hindi, Marathi`,
-      },
-      {
-        heading: 'Response Time Commitment',
-        content: `• Email Queries: Acknowledged within 24 hours, resolved within 48 hours on business days.
-• Phone Calls: Immediate response during support hours.
-• Urgent / Critical Issues: Priority response within 4 hours.
-• Billing / Refund Queries: Resolved within 3–5 business days.
-• Grievances: Acknowledged within 24 hours, resolved within 30 days as per Indian law.`,
-      },
-      {
-        heading: 'Types of Support Available',
-        content: `• Account & Profile Help: Registration, login issues, profile updates, password reset.
-• Billing & Subscription: Payment issues, invoices, plan changes, refund requests.
-• Technical Support: Platform bugs, feature issues, browser compatibility.
-• Recruitment Support: Job posting help, candidate search tips, pipeline management.
-• Verification Queries: Status updates on credential verification.
-• Feedback & Suggestions: We love hearing from our users! Share ideas for platform improvement.
-• Report Abuse: Report fake profiles, spam, harassment, or policy violations.`,
-      },
-      {
-        heading: 'Grievance Redressal',
-        content: `In accordance with Indian consumer protection laws, we have designated a Grievance Officer:
-
-Grievance Officer: ${BIZ.legalName}
-Email: ${BIZ.email}
-Phone: ${BIZ.phone}
-Address: ${fullAddress}
-
-Grievance Process:
-1. Submit your grievance via email with the subject line "Grievance – [Brief Description]"
-2. You will receive an acknowledgement within 24 hours with a ticket number.
-3. Our team will investigate and provide a resolution within 30 days.
-4. If unsatisfied with the resolution, you may escalate to the appropriate consumer forum.`,
-      },
-      {
-        heading: 'Social Media',
-        content: `Follow us for updates, hiring tips, and platform news:
-
-Website: ${BIZ.website}
-
-We are committed to providing excellent support to every user of ${BIZ.brandName}. Don't hesitate to reach out — we're happy to help!`,
-      },
-    ],
-  },
-};
-
-
-// ═══════════════════════════════════════════════
-// POLICY MODAL COMPONENT — FULL FEATURED
+// POLICY MODAL COMPONENT
 // ═══════════════════════════════════════════════
 const PolicyModal: React.FC<{
   type: Exclude<PolicyType, null>;
@@ -846,7 +59,6 @@ const PolicyModal: React.FC<{
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Start with all sections expanded for Razorpay review
     setAllExpanded(true);
     setExpandedSections(new Set(policy.sections.map((_, i) => i)));
     contentRef.current?.scrollTo({ top: 0 });
@@ -890,7 +102,6 @@ const PolicyModal: React.FC<{
         className="bg-white rounded-2xl sm:rounded-3xl max-w-5xl w-full max-h-[95vh] overflow-hidden shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header */}
         <div className="bg-gradient-to-r from-[#2C1B57] to-[#42326E] text-white px-4 sm:px-8 py-5 sm:py-6 shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -915,7 +126,6 @@ const PolicyModal: React.FC<{
             </button>
           </div>
 
-          {/* Policy Navigation Tabs */}
           <div className="flex items-center gap-1.5 mt-4 overflow-x-auto pb-1">
             {policyTabs.map((tab) => (
               <button
@@ -934,9 +144,7 @@ const PolicyModal: React.FC<{
           </div>
         </div>
 
-        {/* Modal Content */}
         <div ref={contentRef} className="overflow-y-auto flex-1 px-4 sm:px-8 py-5 sm:py-6">
-          {/* Business Info Banner */}
           <div className="bg-[#F7F4FA] border border-[#E8E3EF] rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <AlertCircle className="w-5 h-5 text-[#42326E] shrink-0" />
             <div className="text-xs text-[#49454F] leading-relaxed">
@@ -946,10 +154,8 @@ const PolicyModal: React.FC<{
             </div>
           </div>
 
-          {/* Introduction */}
           <p className="text-sm text-[#49454F] leading-relaxed mb-6">{policy.intro}</p>
 
-          {/* Expand/Collapse All */}
           <div className="flex items-center justify-end mb-3">
             <button
               type="button"
@@ -957,26 +163,18 @@ const PolicyModal: React.FC<{
               className="text-[11px] font-bold text-[#42326E] flex items-center gap-1 hover:underline"
             >
               {allExpanded ? (
-                <>
-                  <ChevronUp className="w-3.5 h-3.5" /> Collapse All
-                </>
+                <><ChevronUp className="w-3.5 h-3.5" /> Collapse All</>
               ) : (
-                <>
-                  <ChevronDown className="w-3.5 h-3.5" /> Expand All
-                </>
+                <><ChevronDown className="w-3.5 h-3.5" /> Expand All</>
               )}
             </button>
           </div>
 
-          {/* Sections */}
           <div className="space-y-2">
             {policy.sections.map((section, idx) => {
               const isOpen = expandedSections.has(idx);
               return (
-                <div
-                  key={idx}
-                  className="border border-[#E8E3EF] rounded-xl overflow-hidden"
-                >
+                <div key={idx} className="border border-[#E8E3EF] rounded-xl overflow-hidden">
                   <button
                     type="button"
                     onClick={() => toggleSection(idx)}
@@ -1002,7 +200,6 @@ const PolicyModal: React.FC<{
             })}
           </div>
 
-          {/* Quick Contact Section at Bottom of Every Policy */}
           <div className="mt-8 bg-[#2C1B57] rounded-2xl p-5 sm:p-6 text-white">
             <h3 className="text-sm font-extrabold mb-4">Need Help? Contact Us Directly</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
@@ -1061,10 +258,9 @@ const PolicyModal: React.FC<{
           </div>
         </div>
 
-        {/* Modal Footer */}
         <div className="px-4 sm:px-8 py-4 border-t border-[#E8E3EF] bg-[#FCFCF7] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <p className="text-[11px] text-[#6F687A] text-center sm:text-left">
-            © 2026 {BIZ.brandName} · {BIZ.legalName} · {BIZ.address.city}, {BIZ.address.state}
+            © {new Date().getFullYear()} {BIZ.brandName} · {BIZ.legalName} · {BIZ.address.city}, {BIZ.address.state}
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -1089,23 +285,18 @@ const PolicyModal: React.FC<{
   );
 };
 
-
 // ═══════════════════════════════════════════════
 // APP LOGO COMPONENT
 // ═══════════════════════════════════════════════
 const AppLogo = ({ className = 'w-8 h-8' }: { className?: string }) => {
   const [logoFailed, setLogoFailed] = useState(false);
-
   if (logoFailed) {
     return (
-      <div
-        className={`${className} rounded-xl bg-gradient-to-br from-[#42326E] to-[#2C1B57] flex items-center justify-center text-white font-extrabold shadow-md shrink-0`}
-      >
+      <div className={`${className} rounded-xl bg-gradient-to-br from-[#42326E] to-[#2C1B57] flex items-center justify-center text-white font-extrabold shadow-md shrink-0`}>
         <span style={{ fontSize: '0.4em' }}>SJ</span>
       </div>
     );
   }
-
   return (
     <img
       src="/logo.png"
@@ -1117,18 +308,19 @@ const AppLogo = ({ className = 'w-8 h-8' }: { className?: string }) => {
   );
 };
 
-
 // ═══════════════════════════════════════════════
 // HELPER
 // ═══════════════════════════════════════════════
 const getInitials = (name: string): string =>
-  name
-    .split(' ')
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 
+const formatINR = (amount: number): string => {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(amount);
+};
 
 // ═══════════════════════════════════════════════
 // MAIN LANDING VIEW COMPONENT
@@ -1147,6 +339,12 @@ export const LandingView: React.FC<LandingViewProps> = ({
   const [talentRoleFilter, setTalentRoleFilter] = useState<'all' | 'Design' | 'Engineering' | 'Analytics' | 'Product'>('all');
   const [activeShowcaseTab, setActiveShowcaseTab] = useState<number>(0);
   const [activePolicyModal, setActivePolicyModal] = useState<PolicyType>(null);
+
+  // ✅ LIVE SUBSCRIPTION PLANS from backend
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState<string | null>(null);
+
   const heroRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1155,7 +353,25 @@ export const LandingView: React.FC<LandingViewProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Lock body scroll when modal open
+  // ✅ Fetch live subscription plans from backend
+  useEffect(() => {
+    const loadPlans = async () => {
+      try {
+        setPlansLoading(true);
+        setPlansError(null);
+        const livePlans = await subscriptionService.listPlans();
+        setPlans(livePlans || []);
+      } catch (err: any) {
+        console.warn('Could not fetch subscription plans', err);
+        setPlansError('Live pricing temporarily unavailable');
+        setPlans([]);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+    loadPlans();
+  }, []);
+
   useEffect(() => {
     if (activePolicyModal) {
       document.body.style.overflow = 'hidden';
@@ -1194,8 +410,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     {
       title: 'Cryptographic Credential Audit',
       subtitle: 'Zero false resumes. Ever.',
-      description:
-        'Every applicant is pre-verified against government ID records, corporate domain email confirmation, verified salary tax slips, and educational registrar databases before landing in your pipeline.',
+      description: 'Every applicant is pre-verified against government ID records, corporate domain email confirmation, verified salary tax slips, and educational registrar databases before landing in your pipeline.',
       badge: '94.6% Trust Rating',
       icon: ShieldCheck,
       color: '#5F8A72',
@@ -1208,8 +423,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     {
       title: 'Real-Time Pipeline Velocity',
       subtitle: '48 hours from post to shortlist',
-      description:
-        'Move candidates dynamically between 6 automated stages. Trigger automated candidate alerts, panel calendar invites, and candidate feedback notes without leaving the board.',
+      description: 'Move candidates dynamically between 6 automated stages. Trigger automated candidate alerts, panel calendar invites, and candidate feedback notes without leaving the board.',
       badge: '3.2x Faster Hiring',
       icon: Zap,
       color: '#42326E',
@@ -1222,8 +436,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     {
       title: 'Algorithmic Precision Match',
       subtitle: 'Skill-verified compatibility scoring',
-      description:
-        'Our proprietary scoring engine analyzes authentic code repositories, verified design portfolios, and proven tenure to generate a transparent compatibility score for every opening.',
+      description: 'Our proprietary scoring engine analyzes authentic code repositories, verified design portfolios, and proven tenure to generate a transparent compatibility score for every opening.',
       badge: '96% Accuracy',
       icon: Sparkles,
       color: '#B29CFE',
@@ -1236,8 +449,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     {
       title: 'Frictionless Interview Sync',
       subtitle: 'Meet and Zoom in one click',
-      description:
-        "Say goodbye to 10-email scheduling chains. Candidates pick live panel slots directly synced with your hiring manager's Google Calendar and Microsoft Teams.",
+      description: "Say goodbye to 10-email scheduling chains. Candidates pick live panel slots directly synced with your hiring manager's Google Calendar and Microsoft Teams.",
       badge: 'Zero Scheduling Lag',
       icon: Calendar,
       color: '#C58A3A',
@@ -1249,13 +461,12 @@ export const LandingView: React.FC<LandingViewProps> = ({
     },
   ];
 
+  const currentYear = new Date().getFullYear();
+
   return (
     <div className="landing-page min-h-screen bg-[#FCFCF7] text-[#29233A] flex flex-col selection:bg-[#EDE6FA] selection:text-[#322554] overflow-x-hidden">
       <div className="landing-ambient pointer-events-none absolute inset-x-0 top-0 h-[820px]" aria-hidden="true" />
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* POLICY MODAL (rendered at top for z-index) */}
-      {/* ═══════════════════════════════════════════ */}
       {activePolicyModal && (
         <PolicyModal
           type={activePolicyModal}
@@ -1264,9 +475,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         />
       )}
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* NAVIGATION BAR                              */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* NAV */}
       <nav
         aria-label="Main navigation"
         className={`sticky top-0 z-40 transition-all duration-300 ${
@@ -1278,9 +487,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
         <div className="max-w-[1440px] mx-auto px-5 sm:px-10 lg:px-14 xl:px-20 h-[74px] flex items-center justify-between gap-5">
           <button
             type="button"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            onClick={() => onNavigate('landing')}
             className="flex items-center gap-3 font-extrabold text-xl text-[#2C1B57] cursor-pointer group shrink-0"
-            aria-label="Smile Jobs, back to top"
+            aria-label="Smile Jobs, go to home"
           >
             <AppLogo className="w-10 h-10 rounded-xl shadow-md group-hover:scale-105 transition-transform duration-300" />
             <span className="tracking-tight text-xl font-extrabold text-[#2C1B57]">Smile Jobs</span>
@@ -1347,7 +556,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
 
         {mobileNavOpen && (
-          <div className="lg:hidden border-t border-[#E8E3EF] bg-[#FCFCF7]/95 px-5 py-4 shadow-xl flex flex-col gap-1">
+          <div className="lg:hidden border-t border-[#E8E3EF] bg-[#FCFCF7]/95 px-5 py-4 shadow-xl flex flex-col gap-1 max-h-[80vh] overflow-y-auto">
             {[
               ['Platform', '#platform'],
               ['Showcase', '#showcase'],
@@ -1364,10 +573,14 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <button onClick={() => { setMobileNavOpen(false); onNavigate('dashboard'); }} className="px-3 py-3 rounded-xl text-left text-sm font-semibold text-[#2C1B57] hover:bg-[#EDE6FA]">
               Recruiter console
             </button>
+            <button onClick={() => { setMobileNavOpen(false); onNavigate('profile-purchase'); }} className="px-3 py-3 rounded-xl text-left text-sm font-semibold text-amber-700 hover:bg-amber-50">
+              <Coins className="w-4 h-4 inline mr-2" /> Buy Profile Credits
+            </button>
             <hr className="border-[#E8E3EF] my-1" />
             <button onClick={() => { setMobileNavOpen(false); openPolicy('privacy'); }} className="px-3 py-2 rounded-xl text-left text-xs font-semibold text-[#6F687A] hover:bg-[#EDE6FA]">Privacy Policy</button>
             <button onClick={() => { setMobileNavOpen(false); openPolicy('terms'); }} className="px-3 py-2 rounded-xl text-left text-xs font-semibold text-[#6F687A] hover:bg-[#EDE6FA]">Terms & Conditions</button>
             <button onClick={() => { setMobileNavOpen(false); openPolicy('refund'); }} className="px-3 py-2 rounded-xl text-left text-xs font-semibold text-[#6F687A] hover:bg-[#EDE6FA]">Refund Policy</button>
+            <button onClick={() => { setMobileNavOpen(false); openPolicy('shipping'); }} className="px-3 py-2 rounded-xl text-left text-xs font-semibold text-[#6F687A] hover:bg-[#EDE6FA]">Shipping Policy</button>
             <button onClick={() => { setMobileNavOpen(false); openPolicy('contact'); }} className="px-3 py-2 rounded-xl text-left text-xs font-semibold text-[#6F687A] hover:bg-[#EDE6FA]">Contact Us</button>
             <button onClick={() => { setMobileNavOpen(false); onNavigate('post-job'); }} className="mt-2 px-3 py-3 rounded-xl text-left text-sm font-semibold text-white bg-[#42326E]">
               Post a Job Free
@@ -1376,9 +589,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         )}
       </nav>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* HERO SECTION                                */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* HERO */}
       <section
         ref={heroRef}
         onMouseMove={handleMouseMove}
@@ -1391,7 +602,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <span>Verified talent infrastructure</span>
           </div>
 
-          <h1 className="text-[clamp(2.9rem,5.1vw,4.75rem)] font-extrabold tracking-[-0.045em] text-[#2C1B57] leading-[1.04] max-w-[12ch]">
+          <h1 className="text-[clamp(2.4rem,5.1vw,4.75rem)] font-extrabold tracking-[-0.045em] text-[#2C1B57] leading-[1.04] max-w-[12ch]">
             Great hires start with <span className="text-[#7359B4]">certainty.</span>
           </h1>
 
@@ -1435,7 +646,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Interactive Dashboard Mockup */}
+        {/* Hero device mockup — unchanged */}
         <div className="lg:col-span-6 relative landing-device-wrap">
           <span className="absolute -top-8 right-0 text-[10px] font-bold uppercase tracking-[0.16em] text-[#76698D]">Illustrative product preview</span>
           <div
@@ -1487,21 +698,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 </div>
                 <div className="grid grid-cols-[repeat(3,minmax(165px,1fr))] sm:grid-cols-3 gap-2.5 text-xs overflow-x-auto pb-2">
                   {[
-                    {
-                      title: 'APPLIED (18)',
-                      cards: [
-                        { name: 'Maya Chen', role: 'Senior Product Designer', status: 'ID Verified', score: '94%' },
-                        { name: 'Arjun Rao', role: 'Staff Distributed Eng.', status: 'Cleared', score: '91%' },
-                      ],
-                    },
-                    {
-                      title: 'SCREENING (7)',
-                      cards: [{ name: 'Leo Fischer', role: 'Growth Lead (SaaS)', status: 'Cleared', score: '89%', ring: true }],
-                    },
-                    {
-                      title: 'INTERVIEW (9)',
-                      cards: [{ name: 'Priya Nair', role: 'Senior Data Analyst', status: 'Thu 2:30 PM', score: '96%', isTime: true }],
-                    },
+                    { title: 'APPLIED (18)', cards: [{ name: 'Maya Chen', role: 'Senior Product Designer', status: 'ID Verified', score: '94%' }, { name: 'Arjun Rao', role: 'Staff Distributed Eng.', status: 'Cleared', score: '91%' }] },
+                    { title: 'SCREENING (7)', cards: [{ name: 'Leo Fischer', role: 'Growth Lead (SaaS)', status: 'Cleared', score: '89%', ring: true }] },
+                    { title: 'INTERVIEW (9)', cards: [{ name: 'Priya Nair', role: 'Senior Data Analyst', status: 'Thu 2:30 PM', score: '96%', isTime: true }] },
                   ].map((col) => (
                     <div key={col.title} className="bg-white/5 border border-white/10 rounded-2xl p-2.5 space-y-2">
                       <div className="text-[10px] font-extrabold text-white/40 tracking-wider">{col.title}</div>
@@ -1603,9 +802,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* SOCIAL PROOF STRIP                          */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* SOCIAL PROOF */}
       <section className="border-y border-[#E8E3EF] bg-white/85 py-8">
         <div className="max-w-[1440px] mx-auto px-5 sm:px-10 lg:px-14 xl:px-20 flex flex-col md:flex-row md:items-center gap-5 md:gap-12">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#6F687A] shrink-0">Made for teams building what comes next</p>
@@ -1615,13 +812,11 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* STORY SECTION                               */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* STORY */}
       <section className="landing-story py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-12 lg:gap-20 items-center">
           <div className="max-w-lg">
-            <h2 className="text-4xl sm:text-5xl font-extrabold tracking-[-0.04em] leading-[1.1] text-[#2C1B57]">Hiring should not begin with doubt.</h2>
+            <h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.04em] leading-[1.1] text-[#2C1B57]">Hiring should not begin with doubt.</h2>
             <p className="mt-6 text-base sm:text-lg text-[#49454F] leading-relaxed">When each candidate comes with clear signals, your team can spend less time checking claims and more time meeting people.</p>
             <button onClick={() => onNavigate('candidates')} className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-[#42326E] hover:gap-3 transition-all">
               See the talent directory <ArrowRight className="h-4 w-4" />
@@ -1650,13 +845,11 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* SHOWCASE SECTION                            */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* SHOWCASE */}
       <section id="showcase" className="landing-showcase py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 w-full bg-[#281A4F] text-white">
         <div className="max-w-[1440px] mx-auto">
           <div className="max-w-3xl mb-12 space-y-4">
-            <h2 className="text-4xl sm:text-5xl font-extrabold text-white tracking-[-0.04em] leading-[1.1]">The whole hiring picture, in focus.</h2>
+            <h2 className="text-3xl sm:text-5xl font-extrabold text-white tracking-[-0.04em] leading-[1.1]">The whole hiring picture, in focus.</h2>
             <p className="text-base sm:text-lg text-[#D9D0EC] leading-relaxed">Explore the signals and tools that bring better decisions into one workspace.</p>
           </div>
 
@@ -1721,9 +914,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* PLATFORM FEATURES BENTO                     */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* PLATFORM BENTO (unchanged content, mobile fixes only) */}
       <section id="platform" className="py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="max-w-3xl mb-14 space-y-4">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#2C1B57] tracking-tight">One workspace. Every decision in view.</h2>
@@ -1827,8 +1018,123 @@ export const LandingView: React.FC<LandingViewProps> = ({
       </section>
 
       {/* ═══════════════════════════════════════════ */}
-      {/* TALENT PREVIEW                              */}
+      {/* ⭐ NEW: PROFILE CREDITS FEATURE SECTION   */}
       {/* ═══════════════════════════════════════════ */}
+      <section className="py-20 sm:py-28 px-5 sm:px-10 lg:px-14 xl:px-20 bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 border-y border-amber-200">
+        <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div className="space-y-6">
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 border border-amber-200 text-amber-800 text-xs font-extrabold uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" /> Pay-Per-Unlock · No Subscription Required
+            </span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#2C1B57] tracking-tight leading-[1.1]">
+              Unlock verified profiles with <span className="text-amber-600">Profile Credits</span>
+            </h2>
+            <p className="text-base text-[#49454F] leading-relaxed">
+              Buy credits once, use them whenever you need. Each credit auto-reveals one verified candidate's full contact details and resume. No monthly commitment, no expiration date.
+            </p>
+
+            <div className="space-y-3">
+              {[
+                { icon: Unlock, title: 'Instant Auto-Reveal', desc: 'Qualifying profiles unlock automatically on page load based on your credit balance.' },
+                { icon: Mail, title: 'Full Contact Details', desc: 'Get verified email, phone number, and resume PDF for every unlocked candidate.' },
+                { icon: ShieldCheck, title: 'Quality Guaranteed', desc: 'Only profiles with 50%+ completeness AND uploaded resume are shown. No empty profiles.' },
+                { icon: Download, title: 'Secure Resume Download', desc: 'Resume PDFs are proxied through our secure backend with entitlement checks.' },
+                { icon: Coins, title: 'Credits Never Expire', desc: 'Purchase today, use anytime. Credits stay in your account forever.' },
+              ].map(({ icon: Icon, title, desc }) => (
+                <div key={title} className="flex items-start gap-3 p-3 rounded-xl bg-white/60 border border-amber-100">
+                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-sm">
+                    <Icon className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-extrabold text-[#2C1B57]">{title}</div>
+                    <div className="text-xs text-[#49454F] mt-0.5">{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                onClick={() => onNavigate(authUser ? 'profile-purchase' : 'login')}
+                className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-sm font-extrabold rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center gap-2 active:scale-95"
+              >
+                <Coins className="w-4 h-4" />
+                <span>{authUser ? 'Buy Profile Credits' : 'Sign in to Buy Credits'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onNavigate('candidates')}
+                className="px-6 py-3.5 bg-white border border-amber-200 hover:border-amber-400 text-amber-800 text-sm font-bold rounded-xl shadow-sm transition-all flex items-center gap-2"
+              >
+                Preview Candidates
+              </button>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="relative bg-white rounded-3xl shadow-2xl border border-amber-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-amber-400 to-orange-500 p-5 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-white">
+                  <Coins className="w-5 h-5" />
+                  <span className="text-sm font-extrabold">Your Credit Balance</span>
+                </div>
+                <span className="text-2xl font-black text-white tabular-nums">25</span>
+              </div>
+
+              <div className="p-5 space-y-3">
+                <div className="text-xs font-bold text-[#6F687A] uppercase tracking-wider mb-2">
+                  Auto-Revealed Profiles
+                </div>
+
+                {[
+                  { name: 'Priya Nair', role: 'Senior Data Analyst', email: 'priya.n@gmail.com', phone: '+91 98XXX 23456', completeness: 92 },
+                  { name: 'Arjun Rao', role: 'Staff Engineer', email: 'arjun.r@outlook.com', phone: '+91 97XXX 54321', completeness: 85 },
+                  { name: 'Maya Chen', role: 'Product Designer', email: 'maya.c@gmail.com', phone: '+91 99XXX 11223', completeness: 78 },
+                ].map((profile) => (
+                  <div key={profile.name} className="p-3 rounded-xl bg-gradient-to-r from-emerald-50 to-white border border-emerald-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#42326E] to-[#2C1B57] flex items-center justify-center text-white text-xs font-bold">
+                          {getInitials(profile.name)}
+                        </div>
+                        <div>
+                          <div className="text-sm font-extrabold text-[#2C1B57] flex items-center gap-1">
+                            {profile.name}
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          </div>
+                          <div className="text-[10px] text-[#6F687A]">{profile.role}</div>
+                        </div>
+                      </div>
+                      <span className="text-[9px] font-extrabold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full uppercase">
+                        Unlocked
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-[10px] text-[#49454F] font-medium">
+                      <div className="flex items-center gap-1.5"><Mail className="w-3 h-3 text-emerald-600" /> {profile.email}</div>
+                      <div className="flex items-center gap-1.5"><Phone className="w-3 h-3 text-emerald-600" /> {profile.phone}</div>
+                      <div className="flex items-center gap-1.5"><Download className="w-3 h-3 text-blue-600" /> Resume.pdf · {profile.completeness}% complete</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-[#FCFCF7] p-4 border-t border-amber-100 flex items-center justify-between">
+                <span className="text-xs text-[#6F687A] font-semibold">Need more?</span>
+                <button onClick={() => onNavigate(authUser ? 'profile-purchase' : 'login')} className="text-xs font-extrabold text-amber-700 hover:text-amber-800 flex items-center gap-1">
+                  Buy Credits <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+
+            <div className="absolute -top-4 -right-4 bg-white rounded-2xl p-3 shadow-xl border border-amber-200 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span className="text-xs font-extrabold text-[#2C1B57]">50%+ profiles only</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* TALENT PREVIEW */}
       <section className="py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 bg-[#F5F1FA] border-y border-[#E8E3EF]">
         <div className="max-w-[1440px] mx-auto w-full space-y-8">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -1838,7 +1144,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
             <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-white rounded-xl border border-[#E8E3EF]">
               {(['all', 'Design', 'Engineering', 'Analytics', 'Product'] as const).map((dept) => (
-                <button key={dept} onClick={() => setTalentRoleFilter(dept)} className={`px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all ${talentRoleFilter === dept ? 'bg-[#2C1B57] text-white shadow-xs' : 'text-[#49454F] hover:bg-gray-100'}`}>
+                <button key={dept} onClick={() => setTalentRoleFilter(dept)} className={`px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all whitespace-nowrap ${talentRoleFilter === dept ? 'bg-[#2C1B57] text-white shadow-xs' : 'text-[#49454F] hover:bg-gray-100'}`}>
                   {dept}
                 </button>
               ))}
@@ -1907,9 +1213,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* COMPARISON TABLE                            */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* COMPARISON */}
       <section id="comparison" className="py-24 sm:py-32 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-3">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#2C1B57] tracking-tight">A clearer way to move forward.</h2>
@@ -1927,7 +1231,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
               { feature: 'Time to Shortlist', traditional: '14-21 Days', smileJobs: 'Under 48 Hours' },
               { feature: 'Credential Reliability', traditional: '12-18% falsified', smileJobs: '0% falsification tolerance' },
               { feature: 'Interview Scheduling', traditional: '5-10 email exchanges', smileJobs: '1-click Cal/Zoom booking' },
-              { feature: 'Cost per Hire', traditional: '₹45K-90K (15% markup)', smileJobs: '₹2,499/mo flat subscription' },
+              { feature: 'Pay-per-Profile Option', traditional: 'Not available', smileJobs: 'Profile Credits — no subscription needed' },
             ].map((row, idx) => (
               <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-0 py-5 px-5 sm:px-6 items-center hover:bg-[#FCFCF7]/70 transition-colors">
                 <div className="sm:col-span-4 font-bold text-[#2C1B57] text-sm sm:text-xs">{row.feature}</div>
@@ -1939,9 +1243,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* HIRING STEPS                                */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* HIRING STEPS */}
       <section className="bg-white border-y border-[#E8E3EF] py-24 sm:py-28 px-5 sm:px-10 lg:px-14 xl:px-20">
         <div className="max-w-[1440px] mx-auto">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-12">
@@ -1961,69 +1263,98 @@ export const LandingView: React.FC<LandingViewProps> = ({
       </section>
 
       {/* ═══════════════════════════════════════════ */}
-      {/* PRICING - RAZORPAY COMPLIANCE               */}
+      {/* ⭐ LIVE PRICING FROM BACKEND API         */}
       {/* ═══════════════════════════════════════════ */}
       <section id="pricing" className="py-24 sm:py-28 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
         <div className="text-center max-w-3xl mx-auto mb-12 space-y-3">
           <span className="inline-block text-xs font-extrabold px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200"><CreditCard className="w-3 h-3 inline mr-1" />Secure Payments via Razorpay</span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#2C1B57] tracking-tight">Transparent pricing. No hidden fees.</h2>
-          <p className="text-base text-[#49454F]">All prices in Indian Rupees (INR), inclusive of 18% GST.</p>
+          <p className="text-base text-[#49454F]">All prices in Indian Rupees (INR), inclusive of applicable GST. Live pricing from our platform.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {[
-            {
-              name: 'Starter',
-              desc: 'For small teams',
-              price: '₹2,499',
-              period: '/month',
-              features: ['5 active job postings', '50 verified contacts', 'Basic pipeline', 'Email support'],
-              featured: false,
-            },
-            {
-              name: 'Professional',
-              desc: 'For growing teams',
-              price: '₹7,499',
-              period: '/month',
-              features: ['25 active job postings', '250 verified contacts', 'Advanced analytics', 'Priority support', 'Interview scheduling'],
-              featured: true,
-            },
-            {
-              name: 'Enterprise',
-              desc: 'Custom solutions',
-              price: 'Custom',
-              period: '',
-              features: ['Unlimited postings', 'Unlimited contacts', 'Custom integrations', 'Dedicated manager', '24/7 support'],
-              featured: false,
-            },
-          ].map((plan) => (
-            <div key={plan.name} className={`rounded-3xl p-8 flex flex-col relative ${plan.featured ? 'bg-[#2C1B57] text-white border-2 border-[#B29CFE] shadow-xl' : 'bg-white border border-[#E8E3EF] shadow-sm'}`}>
-              {plan.featured && <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-extrabold px-3 py-1 bg-[#B29CFE] text-[#2C1B57] rounded-full uppercase tracking-wider">Most Popular</span>}
-              <div className="mb-6">
-                <h3 className={`text-lg font-extrabold ${plan.featured ? '' : 'text-[#2C1B57]'}`}>{plan.name}</h3>
-                <p className={`text-xs mt-1 ${plan.featured ? 'text-white/70' : 'text-[#6F687A]'}`}>{plan.desc}</p>
-              </div>
-              <div className="mb-6">
-                <span className={`text-4xl font-extrabold ${plan.featured ? '' : 'text-[#2C1B57]'}`}>{plan.price}</span>
-                <span className={`text-sm ${plan.featured ? 'text-white/70' : 'text-[#6F687A]'}`}>{plan.period}</span>
-              </div>
-              <ul className={`space-y-3 text-sm mb-8 flex-1 ${plan.featured ? 'text-white/90' : 'text-[#49454F]'}`}>
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2"><Check className={`w-4 h-4 mt-0.5 shrink-0 ${plan.featured ? 'text-[#7CE0B0]' : 'text-emerald-600'}`} /> {f}</li>
-                ))}
-              </ul>
-              <button
-                onClick={() => plan.price === 'Custom' ? openPolicy('contact') : onNavigate('post-job')}
-                className={`w-full py-3 text-xs font-bold rounded-xl transition-all ${plan.featured ? 'bg-white text-[#2C1B57] hover:bg-[#FCFCF7]' : 'bg-[#FCFCF7] border border-[#E8E3EF] hover:border-[#42326E] text-[#2C1B57]'}`}
-              >
-                {plan.price === 'Custom' ? 'Contact Sales' : 'Get Started'}
-              </button>
+        {plansLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-10 h-10 text-[#42326E] animate-spin mb-4" />
+            <p className="text-sm font-semibold text-[#6F687A]">Loading live pricing from server...</p>
+          </div>
+        ) : plansError || plans.length === 0 ? (
+          <div className="max-w-2xl mx-auto rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center space-y-4">
+            <AlertCircle className="w-10 h-10 text-amber-600 mx-auto" />
+            <h3 className="text-lg font-extrabold text-amber-900">Live Pricing Temporarily Unavailable</h3>
+            <p className="text-sm text-amber-800">We're unable to fetch live subscription pricing right now. Please contact our team for current rates.</p>
+            <div className="flex flex-wrap gap-3 justify-center pt-2">
+              <a href={`mailto:${BIZ.email}`} className="px-5 py-2.5 bg-[#42326E] text-white text-xs font-bold rounded-xl hover:bg-[#322554] transition-colors inline-flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5" /> Email Sales
+              </a>
+              <a href={`tel:${BIZ.phone.replace(/\s/g, '')}`} className="px-5 py-2.5 bg-white border border-amber-300 text-amber-800 text-xs font-bold rounded-xl hover:bg-amber-100 transition-colors inline-flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5" /> Call Us
+              </a>
             </div>
-          ))}
+          </div>
+        ) : (
+          <div className={`grid grid-cols-1 ${plans.length === 2 ? 'md:grid-cols-2 max-w-3xl' : plans.length >= 3 ? 'md:grid-cols-3 max-w-5xl' : 'max-w-md'} gap-6 mx-auto`}>
+            {plans.map((plan: any, idx: number) => {
+              const isFeatured = plan.featured === true || plan.popular === true || (plans.length > 1 && idx === 1);
+              const planPrice = plan.priceInRupees ?? plan.price ?? (plan.priceInPaise ? plan.priceInPaise / 100 : 0);
+              const planPeriod = plan.billingCycle === 'yearly' || plan.billingCycle === 'annual' ? '/year' : '/month';
+              const planFeatures: string[] = Array.isArray(plan.features) ? plan.features : [];
+
+              return (
+                <div key={plan._id || plan.id || plan.name} className={`rounded-3xl p-8 flex flex-col relative ${isFeatured ? 'bg-[#2C1B57] text-white border-2 border-[#B29CFE] shadow-xl' : 'bg-white border border-[#E8E3EF] shadow-sm'}`}>
+                  {isFeatured && <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-extrabold px-3 py-1 bg-[#B29CFE] text-[#2C1B57] rounded-full uppercase tracking-wider whitespace-nowrap">Most Popular</span>}
+                  <div className="mb-6">
+                    <h3 className={`text-lg font-extrabold ${isFeatured ? '' : 'text-[#2C1B57]'}`}>{plan.name || plan.displayName || 'Plan'}</h3>
+                    <p className={`text-xs mt-1 ${isFeatured ? 'text-white/70' : 'text-[#6F687A]'}`}>{plan.description || plan.tagline || 'Monthly subscription'}</p>
+                  </div>
+                  <div className="mb-6">
+                    <span className={`text-4xl font-extrabold ${isFeatured ? '' : 'text-[#2C1B57]'}`}>
+                      {planPrice > 0 ? formatINR(planPrice) : 'Custom'}
+                    </span>
+                    {planPrice > 0 && <span className={`text-sm ${isFeatured ? 'text-white/70' : 'text-[#6F687A]'}`}>{planPeriod}</span>}
+                  </div>
+                  <ul className={`space-y-3 text-sm mb-8 flex-1 ${isFeatured ? 'text-white/90' : 'text-[#49454F]'}`}>
+                    {planFeatures.length > 0 ? (
+                      planFeatures.map((f, i) => (
+                        <li key={i} className="flex items-start gap-2"><Check className={`w-4 h-4 mt-0.5 shrink-0 ${isFeatured ? 'text-[#7CE0B0]' : 'text-emerald-600'}`} /> {f}</li>
+                      ))
+                    ) : (
+                      <li className="flex items-start gap-2"><Check className={`w-4 h-4 mt-0.5 shrink-0 ${isFeatured ? 'text-[#7CE0B0]' : 'text-emerald-600'}`} /> Full platform access</li>
+                    )}
+                  </ul>
+                  <button
+                    onClick={() => planPrice === 0 ? openPolicy('contact') : onNavigate(authUser ? 'subscription' as AppRoute : 'login')}
+                    className={`w-full py-3 text-xs font-bold rounded-xl transition-all ${isFeatured ? 'bg-white text-[#2C1B57] hover:bg-[#FCFCF7]' : 'bg-[#FCFCF7] border border-[#E8E3EF] hover:border-[#42326E] text-[#2C1B57]'}`}
+                  >
+                    {planPrice === 0 ? 'Contact Sales' : authUser ? 'Choose Plan' : 'Sign In to Subscribe'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Alternative: Profile Credits */}
+        <div className="mt-10 max-w-5xl mx-auto">
+          <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-5">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-md">
+              <Coins className="w-7 h-7 text-white" />
+            </div>
+            <div className="flex-1 text-center sm:text-left">
+              <h3 className="text-base sm:text-lg font-extrabold text-[#2C1B57] flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+                Not ready for a subscription?
+                <span className="text-[10px] font-black px-2 py-0.5 bg-amber-500 text-white rounded-full uppercase tracking-wider">Alternative</span>
+              </h3>
+              <p className="text-sm text-[#49454F] mt-1">Try <strong className="text-amber-700">Profile Credits</strong> — pay only when you unlock a candidate. No monthly commitment. Credits never expire.</p>
+            </div>
+            <button onClick={() => onNavigate(authUser ? 'profile-purchase' : 'login')} className="px-5 py-3 bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 whitespace-nowrap">
+              <Coins className="w-3.5 h-3.5" /> Buy Credits
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <div className="mt-12 flex flex-col items-center gap-4">
-          <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-[#6F687A]">
+          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-xs text-[#6F687A]">
             <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-600" /> SSL Secured</span>
             <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-600" /> Razorpay PCI-DSS</span>
             <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-600" /> GST Invoicing</span>
@@ -2039,11 +1370,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* FINAL CTA                                   */}
-      {/* ═══════════════════════════════════════════ */}
-      <section className="pb-24 px-6 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
-        <div className="bg-[#2C1B57] rounded-3xl p-10 sm:p-14 lg:p-16 text-white relative overflow-hidden shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-10 border border-white/10">
+      {/* FINAL CTA */}
+      <section className="pb-24 px-5 sm:px-10 lg:px-14 xl:px-20 max-w-[1440px] mx-auto w-full">
+        <div className="bg-[#2C1B57] rounded-3xl p-8 sm:p-14 lg:p-16 text-white relative overflow-hidden shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-10 border border-white/10">
           <div className="relative z-10 max-w-2xl space-y-4">
             <span className="text-xs font-bold uppercase tracking-widest text-[#B29CFE]">Make your next move count</span>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight">Your next great hire may already be verified.</h2>
@@ -2061,16 +1390,14 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════════ */}
-      {/* FOOTER — RAZORPAY COMPLIANT                 */}
-      {/* ═══════════════════════════════════════════ */}
+      {/* FOOTER */}
       <footer className="mt-auto border-t border-[#E8E3EF] bg-white pt-16 pb-8 px-5 sm:px-10 lg:px-14 xl:px-20">
         <div className="max-w-[1440px] mx-auto">
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-9 pb-14">
             <div className="col-span-2 sm:col-span-4 lg:col-span-1">
-              <span className="text-xl font-extrabold tracking-tight text-[#2C1B57] flex items-center gap-2.5">
+              <button onClick={() => onNavigate('landing')} className="text-xl font-extrabold tracking-tight text-[#2C1B57] flex items-center gap-2.5">
                 <AppLogo className="w-7 h-7 rounded-lg" /> Smile Jobs
-              </span>
+              </button>
               <p className="mt-3 max-w-[25ch] text-sm leading-relaxed text-[#6F687A]">Verified hiring infrastructure for modern teams across India.</p>
               <div className="mt-4 flex items-center gap-2 text-xs text-[#6F687A]">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" /><span>Secured by Razorpay</span>
@@ -2088,6 +1415,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             <div className="space-y-3 text-sm">
               <h3 className="font-bold text-[#2C1B57]">Talent</h3>
               <button onClick={() => onNavigate('candidates')} className="block text-[#6F687A] hover:text-[#42326E] text-left">Browse candidates</button>
+              <button onClick={() => onNavigate(authUser ? 'profile-purchase' : 'login')} className="block text-[#6F687A] hover:text-[#42326E] text-left">Buy Profile Credits</button>
               <a href="#comparison" className="block text-[#6F687A] hover:text-[#42326E]">Why Smile Jobs</a>
               <button onClick={() => onNavigate(authUser ? 'profile' : 'login')} className="block text-[#6F687A] hover:text-[#42326E] text-left">
                 {authUser ? 'My profile' : 'Sign in'}
@@ -2111,7 +1439,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
           </div>
 
-          {/* Business Address Block - CRITICAL FOR RAZORPAY */}
           <div className="border-t border-[#E8E3EF] pt-8 pb-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
               <div className="flex items-start gap-3">
@@ -2144,7 +1471,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
           </div>
 
-          {/* Payment Methods */}
           <div className="border-t border-[#E8E3EF] pt-6 pb-4">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-2 text-xs text-[#6F687A]">
@@ -2158,10 +1484,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
           </div>
 
-          {/* Copyright + Policy Links */}
           <div className="border-t border-[#E8E3EF] pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#6F687A]">
             <div className="text-center sm:text-left">
-              <p>© 2026 Smile Jobs. All rights reserved.</p>
+              <p>© {currentYear} Smile Jobs. All rights reserved.</p>
               <p className="mt-1">Operated by <strong className="text-[#2C1B57]">{BIZ.legalName}</strong> · {BIZ.type}</p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
@@ -2184,3 +1509,5 @@ export const LandingView: React.FC<LandingViewProps> = ({
     </div>
   );
 };
+
+export default LandingView;

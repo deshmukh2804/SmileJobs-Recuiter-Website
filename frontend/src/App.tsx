@@ -42,6 +42,7 @@ import { CompanyProfileView } from './components/CompanyProfileView';
 import { ProfileView } from './components/ProfileView';
 import { SettingsView } from './components/SettingsView';
 import { SubscriptionView } from './components/SubscriptionView';
+import ProfilePurchaseView from './components/ProfilePurchaseView';   // ✅ NEW IMPORT
 
 
 // Icons
@@ -61,6 +62,7 @@ import {
   LogOut,
   Sparkles,
   UserRound,
+  Coins,                       // ✅ NEW ICON FOR PROFILE PURCHASE
 } from 'lucide-react';
 
 
@@ -98,7 +100,12 @@ try {
 } catch {}
 
 
-const PROTECTED_ROUTES: AppRoute[] = ['dashboard', 'post-job', 'edit-job', 'job-details', 'my-jobs', 'candidates', 'shortlisted', 'interviews', 'company', 'profile', 'settings', 'subscription'];
+// ✅ UPDATED PROTECTED ROUTES — includes profile-purchase
+const PROTECTED_ROUTES: AppRoute[] = [
+  'dashboard', 'post-job', 'edit-job', 'job-details', 'my-jobs',
+  'candidates', 'shortlisted', 'interviews', 'company', 'profile',
+  'settings', 'subscription', 'profile-purchase'
+];
 
 
 const getDisplayEmail = (user?: AuthUser | null): string => {
@@ -307,6 +314,7 @@ export default function App() {
   const sidebarSubline = useMemo(() => authUser?.companyName?.trim() || getContactLabel(authUser), [authUser]);
 
 
+  // ✅ UPDATED PRIMARY NAV ITEMS — added Profile Purchase with Coins icon
   const navItems = useMemo(() => [
     { id: 'dashboard' as AppRoute, label: 'Dashboard', icon: LayoutDashboard },
     { id: 'post-job' as AppRoute, label: 'Post Job', icon: PlusCircle },
@@ -314,6 +322,7 @@ export default function App() {
     { id: 'candidates' as AppRoute, label: 'Candidates', icon: Users },
     { id: 'shortlisted' as AppRoute, label: 'Shortlisted', icon: Star },
     { id: 'interviews' as AppRoute, label: 'Interviews', icon: Calendar },
+    { id: 'profile-purchase' as AppRoute, label: 'Buy Profile Credits', icon: Coins, highlight: true },  // ✅ NEW ITEM
   ], []);
 
 
@@ -404,9 +413,30 @@ export default function App() {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentRoute === item.id || (item.id === 'my-jobs' && (currentRoute === 'edit-job' || currentRoute === 'job-details')) || (item.id === 'post-job' && currentRoute === 'edit-job');
+                const isHighlight = (item as any).highlight;
                 return (
-                  <button key={item.id} onClick={() => handleNavigate(item.id)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${isActive ? 'bg-white/15 text-white shadow-xs' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
-                    <div className="flex items-center gap-2.5"><Icon className="w-4 h-4 shrink-0" /><span>{item.label}</span></div>
+                  <button
+                    key={item.id}
+                    onClick={() => handleNavigate(item.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                      isActive
+                        ? isHighlight
+                          ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-md'
+                          : 'bg-white/15 text-white shadow-xs'
+                        : isHighlight
+                          ? 'text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 border border-amber-400/20'
+                          : 'text-white/60 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className={`w-4 h-4 shrink-0 ${isHighlight && !isActive ? 'text-amber-400' : ''}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {isHighlight && !isActive && (
+                      <span className="text-[8px] font-black uppercase tracking-wider bg-amber-400 text-[#2C1B57] px-1.5 py-0.5 rounded">
+                        New
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -479,6 +509,15 @@ export default function App() {
 
 
               <div className="flex items-center gap-2">
+                {/* ✅ NEW: Quick Access Buy Credits Button in Header */}
+                <button
+                  onClick={() => handleNavigate('profile-purchase')}
+                  className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-full border transition-all hover:shadow-sm bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200 hover:from-amber-100 hover:to-orange-100"
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  <span className="uppercase">Buy Credits</span>
+                </button>
+
                 {authUser?.subscription?.tier && (
                   <button onClick={() => handleNavigate('subscription')} className={`hidden md:inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all hover:shadow-sm ${authUser.subscription.tier === 'enterprise' ? 'bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border-amber-200' : authUser.subscription.tier === 'standard' ? 'bg-gradient-to-r from-[#F8F5FF] to-[#EDE6FA] text-[#42326E] border-[#D7C8ED]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
                     {authUser.subscription.tier === 'enterprise' && '👑'}
@@ -543,9 +582,30 @@ export default function App() {
                     {navItems.map((item) => {
                       const Icon = item.icon;
                       const isActive = currentRoute === item.id;
+                      const isHighlight = (item as any).highlight;
                       return (
-                        <button key={item.id} onClick={() => handleNavigate(item.id)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold ${isActive ? 'bg-white/15 text-white' : 'text-white/60 hover:text-white'}`}>
-                          <div className="flex items-center gap-2.5"><Icon className="w-4 h-4" /><span>{item.label}</span></div>
+                        <button
+                          key={item.id}
+                          onClick={() => handleNavigate(item.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold ${
+                            isActive
+                              ? isHighlight
+                                ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white'
+                                : 'bg-white/15 text-white'
+                              : isHighlight
+                                ? 'text-amber-300 hover:text-amber-200 border border-amber-400/20'
+                                : 'text-white/60 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Icon className={`w-4 h-4 ${isHighlight && !isActive ? 'text-amber-400' : ''}`} />
+                            <span>{item.label}</span>
+                          </div>
+                          {isHighlight && !isActive && (
+                            <span className="text-[8px] font-black uppercase bg-amber-400 text-[#2C1B57] px-1.5 py-0.5 rounded">
+                              New
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -678,6 +738,11 @@ export default function App() {
 
               {currentRoute === 'subscription' && (
                 <SubscriptionView authUser={authUser} onSuccess={handleSubscriptionSuccess} onBack={() => handleNavigate('dashboard')} />
+              )}
+
+              {/* ✅ NEW: Profile Purchase Route Render */}
+              {currentRoute === 'profile-purchase' && (
+                <ProfilePurchaseView />
               )}
             </main>
           </div>

@@ -14,6 +14,7 @@ export type AppRoute =
   | 'company'
   | 'profile'
   | 'settings'
+  | 'profile-purchase'
   | 'subscription';
 
 export type PipelineStage =
@@ -409,3 +410,81 @@ export interface CandidateFullDetails {
   jobDetails?: CandidateJobDetails;
   workflow?: CandidateWorkflow;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// PROFILE PURCHASE FEATURE TYPES
+// ═══════════════════════════════════════════════════════════════
+
+export interface ProfilePricing {
+  _id: string;
+  enabled: boolean;
+  price: number;              // display price (major unit)
+  priceInPaise: number;       // authoritative integer paise
+  currency: string;
+  minQuantity: number;
+  maxQuantity: number;
+  label: string;
+  description?: string;
+  updatedAt?: string;
+}
+
+export interface ProfilePurchaseQuote {
+  pricingConfigId: string;
+  unitPriceInPaise: number;
+  unitPrice: number;
+  quantity: number;
+  totalAmountInPaise: number;
+  totalAmount: number;
+  currency: string;
+  label: string;
+}
+
+export interface ProfilePurchaseOrder {
+  purchaseId: string;
+  razorpayOrderId: string;
+  amount: number;              // paise
+  amountInRupees: number;
+  currency: string;
+  quantity: number;
+  unitPriceInPaise: number;
+  candidateIds: string[];
+  alreadyOwned: string[];
+  razorpayKeyId?: string;      // fallback if VITE_RAZORPAY_KEY_ID not set
+}
+
+export interface ProfilePurchaseVerifyResponse {
+  alreadyProcessed: boolean;
+  purchaseId: string;
+  unlockedCandidateIds: string[];
+  granted?: string[];
+  alreadyOwned?: string[];
+}
+
+export interface ProfilePurchaseRecord {
+  _id: string;
+  recruiterId: string;
+  candidateIds: string[];
+  quantity: number;
+  unitPriceInPaise: number;
+  totalAmountInPaise: number;
+  currency: string;
+  razorpayOrderId: string;
+  razorpayPaymentId?: string;
+  status: 'created' | 'pending' | 'captured' | 'failed' | 'refunded';
+  paidAt?: string;
+  createdAt: string;
+}
+
+export interface ProfilePurchaseSummary {
+  totalSpentPaise: number;
+  totalSpent: number;
+  totalPurchases: number;
+  totalUnlocksBought: number;
+  activeUnlocks: number;
+  currency: string;
+}
+
+// Extend existing Candidate type (add this field — merge with your existing interface)
+// If your Candidate interface is already defined, just add this line inside it:
+//     isUnlocked?: boolean;
+//     resumeProxyUrl?: string;
