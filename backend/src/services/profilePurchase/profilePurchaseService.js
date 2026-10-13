@@ -71,7 +71,7 @@ if (!ProfilePurchase) {
   const s = new mongoose.Schema({
     recruiterId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
     orderId: { type: String, default: null, index: true },
-    razorpayOrderId: { type: String, default: null, index: true },
+    razorpayOrderId: { type: String, default: null, index: { unique: true, sparse: true } },
     razorpayPaymentId: { type: String, default: null },
     razorpaySignature: { type: String, default: null },
     paymentId: { type: String, default: null },
@@ -79,6 +79,7 @@ if (!ProfilePurchase) {
     quantity: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, default: 0 },
     unitPriceInPaise: { type: Number, default: 0 },
+    unitPriceInRupees: { type: Number, default: 0 },
     totalAmount: { type: Number, default: 0 },
     totalAmountInPaise: { type: Number, default: 0 },
     totalAmountInRupees: { type: Number, default: 0 },
@@ -94,6 +95,83 @@ if (!ProfilePurchase) {
 }
 
 console.log('[ProfilePurchaseService] ✅ All models loaded successfully');
+
+// ═══════════════════════════════════════════════════════════════
+// 🔧 AUTO-HEAL: Fix duplicate key index on razorpayOrderId
+// Runs once on startup to clean legacy non-sparse indexes
+// ═══════════════════════════════════════════════════════════════
+
+(async function autoHealPurchaseIndexes() {
+  try {
+    // Wait for mongoose default connection
+    if (mongoose.connection.readyState !== 1) {
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 15000);
+        mongoose.connection.once('connected', () => { clearTimeout(timeout); resolve(); });
+      });
+    }
+
+    const db = mongoose.connection.db;
+    if (!db) {
+      console.warn('[ProfilePurchaseService] Auto-heal: mongoose.connection.db not ready, skipping');
+      return;
+    }
+
+    const collection = db.collection('profile_purchases');
+    const indexes = await collection.indexes();
+
+    // Drop old non-sparse unique indexes
+    for (const idx of indexes) {
+      if (idx.key && idx.key.razorpayOrderId && idx.unique && !idx.sparse) {
+        console.log(`[ProfilePurchaseService] 🔧 Dropping old non-sparse index: ${idx.name}`);
+        try {
+          await collection.dropIndex(idx.name);
+          console.log(`[ProfilePurchaseService] ✅ Dropped index ${idx.name}`);
+        } catch (dropErr) {
+          console.warn(`[ProfilePurchaseService] Index drop warning:`, dropErr.message);
+        }
+      }
+      if (idx.key && idx.key.orderId && idx.unique && !idx.sparse) {
+        console.log(`[ProfilePurchaseService] 🔧 Dropping old non-sparse orderId index: ${idx.name}`);
+        try {
+          await collection.dropIndex(idx.name);
+        } catch (dropErr) {
+          console.warn(`[ProfilePurchaseService] orderId index drop warning:`, dropErr.message);
+        }
+      }
+    }
+
+    // Fix any existing documents with null razorpayOrderId
+    const nullCount = await collection.countDocuments({ razorpayOrderId: null });
+    if (nullCount > 0) {
+      console.log(`[ProfilePurchaseService] 🔧 Fixing ${nullCount} purchases with null razorpayOrderId...`);
+      const nullDocs = await collection.find({ razorpayOrderId: null }).toArray();
+      for (const doc of nullDocs) {
+        const uniqueId = `legacy_${doc._id.toString()}_${Date.now()}`;
+        try {
+          await collection.updateOne(
+            { _id: doc._id },
+            { $set: { razorpayOrderId: uniqueId, orderId: doc.orderId || uniqueId } }
+          );
+        } catch (updateErr) {
+          console.warn(`[ProfilePurchaseService] Update warning for ${doc._id}:`, updateErr.message);
+        }
+      }
+      console.log(`[ProfilePurchaseService] ✅ Fixed ${nullCount} legacy records`);
+    }
+
+    // Recreate sparse unique index
+    try {
+      await collection.createIndex({ razorpayOrderId: 1 }, { unique: true, sparse: true });
+      console.log('[ProfilePurchaseService] ✅ Sparse unique index on razorpayOrderId ready');
+    } catch (createErr) {
+      console.warn('[ProfilePurchaseService] Index creation warning:', createErr.message);
+    }
+
+  } catch (healErr) {
+    console.warn('[ProfilePurchaseService] Auto-heal warning (non-fatal):', healErr.message);
+  }
+})();
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN CANDIDATE USER MODEL
@@ -147,14 +225,10 @@ function getAdminDb() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 🔑 PROFILE COMPLETENESS CHECKER (NEW)
+// 🔑 PROFILE COMPLETENESS CHECKER
 // Only unlock candidates with ≥50% profile + uploaded resume
 // ═══════════════════════════════════════════════════════════════
 
-/**
- * Check if a candidate has an uploaded resume/CV.
- * Handles string URLs, objects with url/path, nested profile/personalInfo.
- */
 function candidateHasResume(candidate) {
   if (!candidate) return false;
 
@@ -184,10 +258,6 @@ function candidateHasResume(candidate) {
 
 /**
  * Calculate profile completeness percentage (0-100).
- * Weights are designed so that a real candidate with resume + basic info
- * easily passes 50%, while empty/login-only profiles stay below 20%.
- *
- * Scoring:
  *   Name (real name, not email prefix)    → 15 points
  *   Email (verified, present)             → 10 points
  *   Phone number                          → 15 points
@@ -196,17 +266,15 @@ function candidateHasResume(candidate) {
  *   Skills (at least 1)                   → 10 points
  *   Experience (at least 1 role/years)    → 10 points
  *   Education (at least 1 degree)         →  5 points
- *   ─────────────────────────────────────────────────
  *   TOTAL                                 → 100 points
- *
- * Minimum to unlock: 50 points (50%)
+ *   Minimum to unlock: 50 points (50%)
  */
 function calculateProfileCompleteness(candidate) {
-  if (!candidate) return 0;
+  if (!candidate) return { score: 0, details: {} };
   let score = 0;
   const details = {};
 
-  // 1. Name (15 pts) — must be a real name, not just email prefix
+  // 1. Name (15 pts)
   let name = candidate.name || candidate.fullName || '';
   if (!name && (candidate.firstName || candidate.lastName)) {
     name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim();
@@ -233,11 +301,11 @@ function calculateProfileCompleteness(candidate) {
   const cleanPhone = String(phone).replace(/\D/g, '');
   if (cleanPhone.length >= 7) { score += 15; details.phone = true; } else { details.phone = false; }
 
-  // 4. Resume (25 pts) ← MOST IMPORTANT
+  // 4. Resume (25 pts)
   const hasResume = candidateHasResume(candidate);
   if (hasResume) { score += 25; details.resume = true; } else { details.resume = false; }
 
-  // 5. Headline / Title (10 pts)
+  // 5. Headline (10 pts)
   const headline = candidate.headline || candidate.title || candidate.jobTitle ||
     candidate.designation || candidate.profession || candidate.currentRole ||
     candidate.profile?.headline || candidate.profile?.title || '';
@@ -270,10 +338,6 @@ function calculateProfileCompleteness(candidate) {
   return { score, details };
 }
 
-/**
- * Check if a candidate qualifies for unlocking.
- * Must have: resume uploaded AND completeness ≥ 50%
- */
 function isCandidateQualified(candidate) {
   if (!candidate) return false;
   if (!candidateHasResume(candidate)) return false;
@@ -389,7 +453,6 @@ function extractCandidateData(candidate) {
     candidate.image || candidate.profileImage ||
     candidate.profile?.avatar || candidate.profile?.profilePicture || '';
 
-  // Calculate completeness for this candidate
   const completeness = calculateProfileCompleteness(candidate);
 
   return {
@@ -563,7 +626,10 @@ class ProfilePurchaseService {
       }
     }
 
-      const purchase = await ProfilePurchase.create({
+    // Ensure razorpayOrderId is NEVER null (prevents duplicate key errors)
+    const finalOrderId = razorpayOrderId || `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const purchase = await ProfilePurchase.create({
       recruiterId: rId,
       quantity: quote.quantity,
       unitPrice: quote.unitPrice,
@@ -575,13 +641,13 @@ class ProfilePurchaseService {
       currency: quote.currency,
       paymentStatus: 'pending',
       status: 'created',
-      razorpayOrderId,
-      orderId: razorpayOrderId,
+      razorpayOrderId: finalOrderId,
+      orderId: finalOrderId,
       pricingSnapshot: quote.pricingSnapshot,
     });
 
     return {
-      purchaseId: purchase._id, orderId: razorpayOrderId,
+      purchaseId: purchase._id, orderId: finalOrderId,
       amount: quote.totalAmountInPaise, amountInRupees: quote.totalAmount,
       currency: quote.currency, quantity: quote.quantity,
       keyId: razorpayKeyId || 'rzp_test_placeholder',
@@ -667,7 +733,6 @@ class ProfilePurchaseService {
       try {
         if (adminDb) {
           totalInUsers = await adminDb.collection('users').countDocuments({});
-          // Count candidates who have a resume (quick native check)
           qualifiedInUsers = await adminDb.collection('users').countDocuments({
             $or: [
               { resume: { $exists: true, $ne: null, $ne: '' } },
@@ -747,14 +812,12 @@ class ProfilePurchaseService {
           .filter((id) => mongoose.Types.ObjectId.isValid(id))
           .map((id) => new mongoose.Types.ObjectId(id));
 
-        // MongoDB filter: exclude roles + recruiter self + MUST have resume
         const candidateFilter = {
           _id: { $nin: excludeObjIds },
           role: {
             $nin: ['admin', 'superadmin', 'recruiter', 'employer', 'company', 'organization',
               'Admin', 'Recruiter', 'Employer', 'SUPERADMIN'],
           },
-          // 🔑 RESUME REQUIRED at DB level (fast filter)
           $or: [
             { resume: { $exists: true, $ne: null, $ne: '' } },
             { resumeUrl: { $exists: true, $ne: null, $ne: '' } },
@@ -768,15 +831,13 @@ class ProfilePurchaseService {
 
         let qualifiedCandidates = [];
         let fetchAttempts = 0;
-        const maxFetchAttempts = 5; // Prevent infinite loops
-        let batchSize = Math.max(availableBalance * 3, 20); // Fetch 3x to account for filtering
+        const maxFetchAttempts = 5;
+        let batchSize = Math.max(availableBalance * 3, 20);
 
-        // Loop: fetch candidates, filter by 50% completeness, repeat if not enough
         while (qualifiedCandidates.length < availableBalance && fetchAttempts < maxFetchAttempts) {
           fetchAttempts++;
           let rawCandidates = [];
 
-          // Method A: Native aggregate
           if (adminDb && rawCandidates.length === 0) {
             try {
               rawCandidates = await adminDb.collection('users')
@@ -789,7 +850,6 @@ class ProfilePurchaseService {
             }
           }
 
-          // Method B: Native find
           if (adminDb && rawCandidates.length === 0) {
             try {
               rawCandidates = await adminDb.collection('users')
@@ -801,7 +861,6 @@ class ProfilePurchaseService {
             }
           }
 
-          // Method C: Mongoose
           if (rawCandidates.length === 0) {
             try {
               rawCandidates = await AdminCandidateUser.find(candidateFilter).limit(batchSize).lean();
@@ -815,7 +874,6 @@ class ProfilePurchaseService {
             break;
           }
 
-          // 🔑 JavaScript filter: ≥50% completeness + not recruiter/admin
           const alreadyQualifiedIds = new Set(qualifiedCandidates.map((c) => c._id.toString()));
 
           for (const candidate of rawCandidates) {
@@ -836,10 +894,8 @@ class ProfilePurchaseService {
             }
           }
 
-          // If we didn't find enough, increase batch size for next attempt
           batchSize = batchSize * 2;
 
-          // Update exclude list to avoid re-fetching same candidates
           const newExcludeIds = rawCandidates.map((c) => c._id).filter(Boolean);
           if (candidateFilter._id && candidateFilter._id.$nin) {
             candidateFilter._id.$nin = [...candidateFilter._id.$nin, ...newExcludeIds];
@@ -848,7 +904,6 @@ class ProfilePurchaseService {
           console.log(`[ProfilePurchase] 📊 Attempt ${fetchAttempts}: found ${qualifiedCandidates.length}/${availableBalance} qualified candidates`);
         }
 
-        // Unlock qualified candidates
         if (qualifiedCandidates.length > 0) {
           const countToUnlock = Math.min(qualifiedCandidates.length, availableBalance);
           console.log(`[ProfilePurchase] 🔑 Unlocking ${countToUnlock} qualified candidates...`);

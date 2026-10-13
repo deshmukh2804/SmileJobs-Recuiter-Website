@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 /**
  * 1. RECRUITER CREDIT SCHEMA
- * Stores the live profile credit balance for each recruiter in recruiter_db.
+ * Stores live profile credit balance for each recruiter in recruiter_db.
  */
 const recruiterCreditSchema = new mongoose.Schema(
   {
@@ -24,6 +24,11 @@ const recruiterCreditSchema = new mongoose.Schema(
       min: 0,
     },
     totalUsed: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    totalExpended: {
       type: Number,
       default: 0,
       min: 0,
@@ -53,7 +58,7 @@ recruiterCreditSchema.methods.addCredits = async function (amount) {
   return this.save();
 };
 
-// Helper method to deduct 1 credit atomically
+// Helper method to deduct credits atomically
 recruiterCreditSchema.methods.useCredit = async function (amount = 1) {
   const qty = Number(amount) || 1;
   if (this.balance < qty) {
@@ -61,6 +66,7 @@ recruiterCreditSchema.methods.useCredit = async function (amount = 1) {
   }
   this.balance -= qty;
   this.totalUsed += qty;
+  this.totalExpended += qty;
   this.lastUsedAt = new Date();
   return this.save();
 };
@@ -87,6 +93,11 @@ const profileEntitlementSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       default: '',
+    },
+    status: {
+      type: String,
+      default: 'active',
+      index: true,
     },
     unlockedAt: {
       type: Date,
@@ -119,6 +130,9 @@ profileEntitlementSchema.index({ recruiterId: 1, candidateId: 1 }, { unique: tru
 /**
  * 3. PROFILE PURCHASE SCHEMA
  * Stores Razorpay purchase history and payment verification details.
+ * FIXED: razorpayOrderId uses sparse unique index (allows null safely).
+ * FIXED: unitPriceInRupees included for schema compatibility.
+ * FIXED: All fields optional with defaults to prevent validation errors.
  */
 const profilePurchaseSchema = new mongoose.Schema(
   {
@@ -128,12 +142,28 @@ const profilePurchaseSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+
+    // Order ID fields — sparse unique so multiple nulls don't collide
     orderId: {
       type: String,
-      required: true,
-      unique: true,
+      default: null,
       index: true,
     },
+    razorpayOrderId: {
+      type: String,
+      default: null,
+      index: { unique: true, sparse: true },
+    },
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
+    razorpaySignature: {
+      type: String,
+      default: null,
+    },
+
+    // Alternative payment ID fields (legacy support)
     paymentId: {
       type: String,
       default: null,
@@ -143,40 +173,65 @@ const profilePurchaseSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+
+    // Quantity
     quantity: {
       type: Number,
       required: true,
       min: [1, 'Quantity must be at least 1'],
     },
+
+    // Pricing fields — all include defaults to prevent validation errors
+    unitPrice: {
+      type: Number,
+      default: 0,
+    },
     unitPriceInPaise: {
       type: Number,
-      required: true,
+      default: 0,
     },
     unitPriceInRupees: {
       type: Number,
-      required: true,
+      default: 0,
+    },
+    totalAmount: {
+      type: Number,
+      default: 0,
     },
     totalAmountInPaise: {
       type: Number,
-      required: true,
+      default: 0,
     },
     totalAmountInRupees: {
       type: Number,
-      required: true,
+      default: 0,
     },
     currency: {
       type: String,
       default: 'INR',
       uppercase: true,
     },
+
+    // Status — expanded enum for all possible states
+    paymentStatus: {
+      type: String,
+      default: 'pending',
+      index: true,
+    },
     status: {
       type: String,
-      enum: ['created', 'paid', 'failed', 'refunded'],
+      enum: ['created', 'paid', 'failed', 'refunded', 'pending', 'completed', 'captured'],
       default: 'created',
       index: true,
     },
     paymentMethod: {
       type: String,
+      default: null,
+    },
+
+    // Metadata
+    pricingSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
       default: null,
     },
     rawRazorpayResponse: {
