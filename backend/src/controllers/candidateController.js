@@ -14,7 +14,7 @@ const AVATAR_COLORS = ["#42326E", "#6E5B9A", "#C58A3A", "#5A6E8F", "#8A6E4F", "#
 const APPLICATION_SERVICE_BASE_URL =
   process.env.APPLICATION_SERVICE_URL ||
   process.env.APPLICATION_BACKEND_URL ||
-  "https://smilejobs-application-backend.onrender.com";
+  "https://recruiter-api.smilejobs.in/api/v1";
 
 const buildResumeProxyUrl = (userId) => {
   if (!userId) return "";
